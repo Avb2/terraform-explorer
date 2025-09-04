@@ -1788,11 +1788,15 @@ function saveGraph() {
     const data = {
       url: window.location.href,
       timestamp: Date.now(),
-      elements: cy.json().elements
+      elements: cy.json().elements,
+      viewport: {
+        pan: cy.pan(),
+        zoom: cy.zoom()
+      }
     };
     
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-    console.log('✅ Graph saved successfully');
+    console.log('✅ Graph saved successfully (with positions)');
     
     // Show status indicator
     const statusDiv = document.getElementById('canvas-status');
@@ -1830,7 +1834,15 @@ function loadGraph() {
     if (cy && data.elements) {
       cy.elements().remove();
       cy.add(data.elements);
-      console.log('✅ Graph loaded successfully');
+      
+      // Restore viewport if available
+      if (data.viewport) {
+        cy.pan(data.viewport.pan);
+        cy.zoom(data.viewport.zoom);
+        console.log('✅ Graph loaded successfully (with positions)');
+      } else {
+        console.log('✅ Graph loaded successfully (no viewport data)');
+      }
     }
   } catch (error) {
     console.error('Failed to load graph:', error);
