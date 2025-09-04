@@ -216,30 +216,67 @@ function parseHCL(content) {
 
   let currentResource = null;
   let currentModule = null;
+  let currentBlock = null;
 
   lines.forEach((raw, index) => {
     const line = raw.trim();
     if (line.startsWith('resource ')) {
       const m = line.match(/resource\s+"([^"]+)"\s+"([^"]+)"/);
       if (m) {
-        currentResource = { type: m[1], name: m[2], line: index + 1, attributes: [] };
+        currentResource = { 
+          type: m[1], 
+          name: m[2], 
+          line: index + 1, 
+          attributes: [],
+          depends_on: [],
+          references: [],
+          blockStart: index + 1
+        };
+        currentBlock = currentResource;
         resources.push(currentResource);
       }
     } else if (line.startsWith('module ')) {
       const m = line.match(/module\s+"([^"]+)"/);
       if (m) {
-        currentModule = { name: m[1], line: index + 1, source: '' };
+        currentModule = { 
+          name: m[1], 
+          line: index + 1, 
+          source: '',
+          depends_on: [],
+          references: [],
+          blockStart: index + 1
+        };
+        currentBlock = currentModule;
         modules.push(currentModule);
       }
-    } else if (currentResource && /^\w+\s*=/.test(line)) {
+    } else if (currentBlock && /^\w+\s*=/.test(line)) {
       const parts = line.split('=');
       const attr = parts[0].trim();
       const value = parts.slice(1).join('=').trim();
-      currentResource.attributes.push({ name: attr, value: value });
+      
+      // Parse depends_on explicitly
+      if (attr === 'depends_on') {
+        const deps = parseDependsOnValue(value);
+        currentBlock.depends_on.push(...deps);
+      }
+      
+      // Check for implicit references in attribute values
+      const refs = extractReferences(value);
+      currentBlock.references.push(...refs);
+      
+      currentBlock.attributes.push({ name: attr, value: value });
     } else if (currentModule && line.startsWith('source ')) {
       const m = line.match(/source\s*=\s*"([^"]+)"/);
       if (m) currentModule.source = m[1];
     }
+  });
+
+  // Add block end lines
+  resources.forEach(r => {
+    r.blockEnd = findBlockEnd(lines, r.blockStart);
+  });
+  modules.forEach(m => {
+    m.blockEnd = findBlockEnd(lines, m.blockStart);
   });
 
   resources.forEach(r => {
@@ -257,18 +294,394 @@ function parseHCL(content) {
   return { resources, modules, issues };
 }
 
-// --------- Graph ----------
+// Helper function to find the end of a block
+function findBlockEnd(lines, startLine) {
+  let depth = 0;
+  for (let i = startLine - 1; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.includes('{')) depth++;
+    if (line.includes('}')) {
+      depth--;
+      if (depth === 0) return i + 1;
+    }
+  }
+  return lines.length;
+}
+
+// Parse depends_on value (supports both list and single reference)
+function parseDependsOnValue(value) {
+  const deps = [];
+  
+  // Remove quotes and brackets
+  const cleanValue = value.replace(/^\[|\]$/g, '').replace(/"/g, '');
+  
+  // Split by comma and clean up
+  const parts = cleanValue.split(',').map(p => p.trim()).filter(p => p);
+  
+  parts.forEach(part => {
+    // Handle different reference formats
+    if (part.includes('.')) {
+      // resource_type.resource_name format
+      deps.push(part);
+    } else if (part.startsWith('module.')) {
+      // module.module_name format
+      deps.push(part);
+    } else if (part.startsWith('data.')) {
+      // data.data_type.data_name format
+      deps.push(part);
+    }
+  });
+  
+  return deps;
+}
+
+// Extract implicit references from attribute values
+function extractReferences(value) {
+  const refs = [];
+  
+  // Remove quotes
+  const cleanValue = value.replace(/"/g, '');
+  
+  // Look for Terraform reference patterns
+  const patterns = [
+    // resource references: aws_instance.web.id
+    /([a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*)/g,
+    // module outputs: module.vpc.vpc_id
+    /(module\.[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*)/g,
+    // data source references: data.aws_ami.ubuntu.id
+    /(data\.[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*)/g,
+    // variable references: var.environment
+    /(var\.[a-z_][a-z0-9_]*)/g,
+    // local references: local.common_tags
+    /(local\.[a-z_][a-z0-9_]*)/g
+  ];
+  
+  patterns.forEach(pattern => {
+    const matches = cleanValue.match(pattern);
+    if (matches) {
+      matches.forEach(match => {
+        // Extract the base reference (without the attribute)
+        const baseRef = match.split('.').slice(0, -1).join('.');
+        if (baseRef && !refs.includes(baseRef)) {
+          refs.push(baseRef);
+        }
+      });
+    }
+  });
+  
+  return refs;
+}
+
+// --------- Dependency Analysis ----------
 function buildDependencyGraph(resources, modules) {
   const elements = [];
+  const dependencyMap = new Map();
+  const impactMap = new Map();
+  
+  // Create nodes
   resources.forEach(res => {
-    elements.push({ data: { id: `${res.type}.${res.name}`, label: `${res.type}\n${res.name}`, type: 'resource', resourceType: res.type } });
+    const nodeId = `${res.type}.${res.name}`;
+    elements.push({ 
+      data: { 
+        id: nodeId, 
+        label: `${res.type}\n${res.name}`, 
+        type: 'resource', 
+        resourceType: res.type,
+        depends_on: res.depends_on,
+        references: res.references
+      } 
+    });
+    dependencyMap.set(nodeId, res);
   });
+  
   modules.forEach(mod => {
-    elements.push({ data: { id: `module.${mod.name}`, label: `module\n${mod.name}`, type: 'module' } });
-    // Don't add module relationships by default - let users draw them
+    const nodeId = `module.${mod.name}`;
+    elements.push({ 
+      data: { 
+        id: nodeId, 
+        label: `module\n${mod.name}`, 
+        type: 'module',
+        depends_on: mod.depends_on,
+        references: mod.references
+      } 
+    });
+    dependencyMap.set(nodeId, mod);
   });
+  
+  // Create edges for dependencies
+  const allItems = [...resources, ...modules];
+  allItems.forEach(item => {
+    const sourceId = item.type ? `${item.type}.${item.name}` : `module.${item.name}`;
+    
+    // Add explicit dependencies (depends_on)
+    (item.depends_on || []).forEach(dep => {
+      if (dependencyMap.has(dep)) {
+        elements.push({
+          data: {
+            id: `edge-${sourceId}-${dep}`,
+            source: dep,
+            target: sourceId,
+            relationshipType: 'explicit',
+            label: 'depends_on'
+          }
+        });
+      }
+    });
+    
+    // Add implicit dependencies (references)
+    (item.references || []).forEach(ref => {
+      if (dependencyMap.has(ref)) {
+        elements.push({
+          data: {
+            id: `edge-${sourceId}-${ref}`,
+            source: ref,
+            target: sourceId,
+            relationshipType: 'implicit',
+            label: 'references'
+          }
+        });
+      }
+    });
+  });
+  
+  // Build impact map for quick lookup
+  buildImpactMap(elements, impactMap);
+  
   console.log('buildDependencyGraph: Elements:', elements);
-  return elements;
+  console.log('buildDependencyGraph: Impact map built with', impactMap.size, 'entries');
+  return { elements, dependencyMap, impactMap };
+}
+
+// Build a map of which resources would be impacted if a given resource is destroyed
+function buildImpactMap(elements, impactMap) {
+  const nodes = elements.filter(el => el.data.id && !el.data.source);
+  const edges = elements.filter(el => el.data.source && el.data.target);
+  
+  // Create adjacency list
+  const adjacencyList = new Map();
+  nodes.forEach(node => {
+    adjacencyList.set(node.data.id, []);
+  });
+  
+  // Build adjacency list from edges
+  edges.forEach(edge => {
+    const source = edge.data.source;
+    const target = edge.data.target;
+    if (adjacencyList.has(source)) {
+      adjacencyList.get(source).push(target);
+    }
+  });
+  
+  // Calculate impact for each node using DFS
+  nodes.forEach(node => {
+    const impacted = new Set();
+    const visited = new Set();
+    
+    function dfs(currentNode) {
+      if (visited.has(currentNode)) return;
+      visited.add(currentNode);
+      
+      // Add all nodes that depend on this one
+      edges.forEach(edge => {
+        if (edge.data.source === currentNode) {
+          const dependent = edge.data.target;
+          impacted.add(dependent);
+          dfs(dependent);
+        }
+      });
+    }
+    
+    dfs(node.data.id);
+    impactMap.set(node.data.id, Array.from(impacted));
+  });
+}
+
+// Get all resources that would be impacted if a given resource is destroyed
+function getImpactChain(resourceId, impactMap) {
+  return impactMap.get(resourceId) || [];
+}
+
+// Get direct dependencies of a resource
+function getDirectDependencies(resourceId, elements) {
+  const edges = elements.filter(el => el.data.source && el.data.target);
+  return edges
+    .filter(edge => edge.data.target === resourceId)
+    .map(edge => ({
+      source: edge.data.source,
+      type: edge.data.relationshipType,
+      label: edge.data.label
+    }));
+}
+
+// Get resources that depend on a given resource
+function getDependents(resourceId, elements) {
+  const edges = elements.filter(el => el.data.source && el.data.target);
+  return edges
+    .filter(edge => edge.data.source === resourceId)
+    .map(edge => ({
+      target: edge.data.target,
+      type: edge.data.relationshipType,
+      label: edge.data.label
+    }));
+}
+
+// Show impact analysis for a selected node
+function showImpactAnalysis(node, dependencyData) {
+  const nodeId = node.data('id');
+  const { impactMap, elements } = dependencyData;
+  
+  // Get impact chain
+  const impactedResources = getImpactChain(nodeId, impactMap);
+  const directDeps = getDirectDependencies(nodeId, elements);
+  const dependents = getDependents(nodeId, elements);
+  
+  // Highlight impacted nodes in the graph
+  highlightImpactChain(nodeId, impactedResources, cy);
+  
+  // Show the reset button when impact analysis is active
+  const resetImpactBtn = document.querySelector('[title="Reset Impact Highlighting"]');
+  if (resetImpactBtn) {
+    resetImpactBtn.style.display = 'block';
+  }
+  
+  // Show impact analysis in details panel
+  const detailsDiv = document.querySelector('[data-graph-details]');
+  const detailsContent = document.getElementById('details-content');
+  
+  if (detailsDiv && detailsContent) {
+    const impactSection = document.createElement('div');
+    impactSection.style.cssText = `
+      margin-top: 16px;
+      border-top: 1px solid #ddd;
+      padding-top: 12px;
+    `;
+    
+    impactSection.innerHTML = `
+      <div style="margin-bottom: 12px;">
+        <strong style="color: #000; font-size: 14px;">Impact Analysis</strong>
+      </div>
+      
+      <div style="margin-bottom: 8px;">
+        <div style="font-weight: 600; color: #000; margin-bottom: 4px;">Direct Dependencies (${directDeps.length}):</div>
+        ${directDeps.length > 0 ? 
+          directDeps.map(dep => `
+            <div style="margin: 2px 0; padding: 4px 8px; background: #e3f2fd; border-radius: 3px; font-size: 12px; font-family: 'Courier New', monospace; color: #000;">
+              ${dep.source} <span style="color: #666;">(${dep.type})</span>
+            </div>
+          `).join('') : 
+          '<div style="color: #666; font-style: italic; font-size: 12px;">None</div>'
+        }
+      </div>
+      
+      <div style="margin-bottom: 8px;">
+        <div style="font-weight: 600; color: #000; margin-bottom: 4px;">Resources That Depend On This (${dependents.length}):</div>
+        ${dependents.length > 0 ? 
+          dependents.map(dep => `
+            <div style="margin: 2px 0; padding: 4px 8px; background: #fff3e0; border-radius: 3px; font-size: 12px; font-family: 'Courier New', monospace; color: #000;">
+              ${dep.target} <span style="color: #666;">(${dep.type})</span>
+            </div>
+          `).join('') : 
+          '<div style="color: #666; font-style: italic; font-size: 12px;">None</div>'
+        }
+      </div>
+      
+      <div style="margin-bottom: 8px;">
+        <div style="font-weight: 600; color: #000; margin-bottom: 4px;">Impact Chain (${impactedResources.length} resources would be affected):</div>
+        ${impactedResources.length > 0 ? 
+          impactedResources.map(resourceId => `
+            <div style="margin: 2px 0; padding: 4px 8px; background: #ffebee; border-radius: 3px; font-size: 12px; font-family: 'Courier New', monospace; color: #000;">
+              ${resourceId}
+            </div>
+          `).join('') : 
+          '<div style="color: #666; font-style: italic; font-size: 12px;">No resources would be affected</div>'
+        }
+      </div>
+      
+      <div style="margin-top: 12px; padding: 8px; background: #f5f5f5; border-radius: 4px; font-size: 11px; color: #666;">
+        <strong>Legend:</strong><br>
+        • <span style="color: #FF5722;">Solid orange lines</span> = Explicit dependencies (depends_on)<br>
+        • <span style="color: #9C27B0;">Dashed purple lines</span> = Implicit dependencies (references)<br>
+        • <span style="color: #d32f2f;">Red highlighted nodes</span> = Would be affected if this resource is destroyed
+      </div>
+    `;
+    
+    // Append impact analysis to existing content
+    detailsContent.appendChild(impactSection);
+  }
+}
+
+// Highlight the impact chain in the graph
+function highlightImpactChain(selectedNodeId, impactedResources, cy) {
+  // Reset all node styling first
+  cy.nodes().forEach(node => {
+    const nodeType = node.data('type');
+    const nodeLabel = node.data('label');
+    
+    if (nodeType === 'module') {
+      node.style({
+        'background-color': '#FF9800',
+        'border-color': '#E65100',
+        'border-width': 2,
+        'font-size': '12px',
+        'width': '60px',
+        'height': '60px',
+        'label': nodeLabel
+      });
+    } else {
+      node.style({
+        'background-color': '#4CAF50',
+        'border-color': '#2E7D32',
+        'border-width': 2,
+        'font-size': '12px',
+        'width': '60px',
+        'height': '60px',
+        'label': nodeLabel
+      });
+    }
+  });
+  
+  // Highlight the selected node
+  const selectedNode = cy.getElementById(selectedNodeId);
+  if (selectedNode.length > 0) {
+    selectedNode.style({
+      'background-color': '#2196F3',
+      'border-color': '#1976D2',
+      'border-width': 4,
+      'font-size': '14px',
+      'width': '70px',
+      'height': '70px'
+    });
+  }
+  
+  // Highlight impacted nodes
+  impactedResources.forEach(resourceId => {
+    const node = cy.getElementById(resourceId);
+    if (node.length > 0) {
+      node.style({
+        'background-color': '#f44336',
+        'border-color': '#d32f2f',
+        'border-width': 3,
+        'font-size': '13px',
+        'width': '65px',
+        'height': '65px'
+      });
+    }
+  });
+  
+  // Highlight edges to impacted nodes
+  cy.edges().forEach(edge => {
+    const source = edge.data('source');
+    const target = edge.data('target');
+    
+    if (source === selectedNodeId && impactedResources.includes(target)) {
+      edge.style({
+        'width': 6,
+        'line-color': '#f44336',
+        'target-arrow-color': '#f44336',
+        'opacity': 1
+      });
+    }
+  });
 }
 
 function createGraphControls(container) {
@@ -314,7 +727,15 @@ function createGraphControls(container) {
       Modules
     </div>
     <div style="margin-top: 8px; border-top: 1px solid #ddd; padding-top: 4px;">
-      <div style="font-size: 10px; margin-bottom: 2px;"><strong>Relationships:</strong></div>
+      <div style="font-size: 10px; margin-bottom: 2px;"><strong>Dependencies:</strong></div>
+      <div style="display: flex; align-items: center; margin: 1px 0;">
+        <div style="width: 16px; height: 3px; background: #FF5722; margin-right: 6px;"></div>
+        <span style="font-size: 10px;">Explicit (depends_on)</span>
+      </div>
+      <div style="display: flex; align-items: center; margin: 1px 0;">
+        <div style="width: 16px; height: 2px; background: #9C27B0; border-top: 1px dashed #9C27B0; margin-right: 6px;"></div>
+        <span style="font-size: 10px;">Implicit (references)</span>
+      </div>
       <div style="display: flex; align-items: center; margin: 1px 0;">
         <div style="width: 16px; height: 2px; background: #9C27B0; margin-right: 6px;"></div>
         <span style="font-size: 10px;">User Drawn</span>
@@ -526,6 +947,80 @@ function createGraphControls(container) {
         }, 100);
       }
   };
+
+  // Reset impact highlighting button (hidden by default)
+  const resetImpactBtn = document.createElement('button');
+  resetImpactBtn.innerHTML = 'Reset';
+  resetImpactBtn.title = 'Reset Impact Highlighting';
+  resetImpactBtn.style.cssText = zoomInBtn.style.cssText + '; display: none;';
+  resetImpactBtn.onclick = () => {
+    // Reset all node styling
+    cy.nodes().forEach(node => {
+      const nodeType = node.data('type');
+      const nodeLabel = node.data('label');
+      
+      if (nodeType === 'module') {
+        node.style({
+          'background-color': '#FF9800',
+          'border-color': '#E65100',
+          'border-width': 2,
+          'font-size': '12px',
+          'width': '60px',
+          'height': '60px',
+          'label': nodeLabel
+        });
+      } else {
+        node.style({
+          'background-color': '#4CAF50',
+          'border-color': '#2E7D32',
+          'border-width': 2,
+          'font-size': '12px',
+          'width': '60px',
+          'height': '60px',
+          'label': nodeLabel
+        });
+      }
+    });
+    
+    // Reset edge styling
+    cy.edges().forEach(edge => {
+      const relationshipType = edge.data('relationshipType');
+      if (relationshipType === 'explicit') {
+        edge.style({
+          'width': 4,
+          'line-color': '#FF5722',
+          'target-arrow-color': '#FF5722',
+          'opacity': 0.9
+        });
+      } else if (relationshipType === 'implicit') {
+        edge.style({
+          'width': 2,
+          'line-color': '#9C27B0',
+          'target-arrow-color': '#9C27B0',
+          'opacity': 0.6
+        });
+      } else {
+        edge.style({
+          'width': 3,
+          'line-color': '#9C27B0',
+          'target-arrow-color': '#9C27B0',
+          'opacity': 0.8
+        });
+      }
+    });
+    
+    // Clear impact analysis from details panel
+    const detailsContent = document.getElementById('details-content');
+    if (detailsContent) {
+      const impactSection = detailsContent.querySelector('[style*="border-top: 1px solid #ddd"]');
+      if (impactSection) {
+        impactSection.remove();
+      }
+    }
+    
+    // Hide the reset button
+    resetImpactBtn.style.display = 'none';
+  };
   
 
 
@@ -535,6 +1030,7 @@ function createGraphControls(container) {
   controlsDiv.appendChild(panBtn);
   controlsDiv.appendChild(drawBtn);
   controlsDiv.appendChild(clearBtn);
+  controlsDiv.appendChild(resetImpactBtn);
 
   // Create status indicator for auto-save
   const statusDiv = document.createElement('div');
@@ -903,6 +1399,34 @@ function initGraph(elements) {
             'opacity': 0.7
           }
         },
+        // Explicit dependency edges (depends_on)
+        {
+          selector: 'edge[relationshipType = "explicit"]',
+          style: {
+            'width': 4,
+            'line-color': '#FF5722',
+            'target-arrow-color': '#FF5722',
+            'target-arrow-shape': 'triangle',
+            'target-arrow-width': 10,
+            'curve-style': 'bezier',
+            'opacity': 0.9,
+            'line-style': 'solid'
+          }
+        },
+        // Implicit dependency edges (references)
+        {
+          selector: 'edge[relationshipType = "implicit"]',
+          style: {
+            'width': 2,
+            'line-color': '#9C27B0',
+            'target-arrow-color': '#9C27B0',
+            'target-arrow-shape': 'triangle',
+            'target-arrow-width': 6,
+            'curve-style': 'bezier',
+            'opacity': 0.6,
+            'line-style': 'dashed'
+          }
+        },
         // Active elements (instead of hover)
         {
           selector: 'node:active',
@@ -1227,6 +1751,11 @@ function initGraph(elements) {
         } else {
           console.log('Selected node:', node.data('label'));
           showNodeDetails(node);
+          
+          // Show impact analysis if dependency data is available
+          if (window.tfDependencyData) {
+            showImpactAnalysis(node, window.tfDependencyData);
+          }
         }
       });
 
@@ -1372,7 +1901,7 @@ function setupToggleButton() {
         setTimeout(() => {
           const content = collectCodeText();
           if (content) {
-            const { resources, modules, issues } = parseHCL(content);
+            const { resources, modules } = parseHCL(content);
             const elements = buildDependencyGraph(resources, modules);
             initGraph(elements);
             
@@ -1414,7 +1943,6 @@ function ensureSidebar() {
     <aside id="tf-explorer-sidebar">
       <div id="tf-resources-section"></div>
       <div id="tf-modules-section"></div>
-      <div id="tf-issues-section"></div>
       <div id="tf-graph"></div>
     </aside>
   `;
@@ -1423,7 +1951,7 @@ function ensureSidebar() {
 
 
 
-function renderLists(resources, modules, issues) {
+function renderLists(resources, modules) {
   // Resources with collapsible section
   const resSection = document.getElementById('tf-resources-section');
   if (resSection) {
@@ -1580,80 +2108,7 @@ function renderLists(resources, modules, issues) {
     modSection.appendChild(content);
   }
 
-  // Issues with collapsible section
-  const issueSection = document.getElementById('tf-issues-section');
-  if (issueSection) {
-    issueSection.innerHTML = '';
-    
-    // Create header with toggle
-    const header = document.createElement('div');
-    header.className = 'tf-section-header';
-    header.style.cssText = `
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      cursor: pointer;
-      padding: 8px 0;
-      border-bottom: 1px solid #333;
-      margin-bottom: 8px;
-    `;
-    
-    const title = document.createElement('h4');
-    title.textContent = `Issues (${issues.length})`;
-    title.style.cssText = 'margin: 0; font-size: 18px; color: #007bff;';
-    
-    const toggle = document.createElement('span');
-    toggle.innerHTML = issues.length > 0 ? '▼' : '▶';
-    toggle.style.cssText = `
-      font-size: 12px;
-      color: #007bff;
-      transition: transform 0.2s ease;
-    `;
-    
-    header.appendChild(title);
-    header.appendChild(toggle);
-    
-    // Create collapsible content
-    const content = document.createElement('div');
-    content.className = 'tf-section-content';
-    content.style.cssText = `
-      max-height: 200px;
-      overflow-y: auto;
-      transition: max-height 0.3s ease;
-    `;
-    
-    const issueList = document.createElement('ul');
-    issueList.id = 'tf-issues';
-    issueList.style.cssText = 'list-style: none; padding: 0; margin: 0;';
-    
-    issues.forEach(msg => {
-      const li = document.createElement('li');
-      li.className = 'tf-error';
-      li.textContent = msg;
-      li.style.cssText = 'margin: 8px 0; font-size: 16px; color: #d32f2f; font-weight: 500;';
-      issueList.appendChild(li);
-    });
-    
-    content.appendChild(issueList);
-    
-    // Toggle functionality
-    let isExpanded = issues.length > 0;
-    content.style.maxHeight = isExpanded ? '200px' : '0px';
-    if (!isExpanded) {
-      toggle.style.transform = 'rotate(-90deg)';
-      toggle.innerHTML = '▶';
-    }
-    
-    header.onclick = () => {
-      isExpanded = !isExpanded;
-      content.style.maxHeight = isExpanded ? '200px' : '0px';
-      toggle.style.transform = isExpanded ? 'rotate(0deg)' : 'rotate(-90deg)';
-      toggle.innerHTML = isExpanded ? '▼' : '▶';
-    };
-    
-    issueSection.appendChild(header);
-    issueSection.appendChild(content);
-  }
+
 }
 
 
@@ -1682,18 +2137,21 @@ function processTerraformFile() {
   }
   lastContentHash = contentHash;
 
-  const { resources, modules, issues } = parseHCL(content);
+  const { resources, modules } = parseHCL(content);
 
   // safe call (avoids ReferenceError if something gets reordered)
   if (typeof renderLists === 'function') {
-    renderLists(resources, modules, issues);
+    renderLists(resources, modules);
   } else {
     console.warn('renderLists missing – skipping list rendering');
   }
 
   // Removed auto-open behavior - sidebar will stay closed until user clicks the toggle button
 
-  const elements = buildDependencyGraph(resources, modules);
+  const { elements, dependencyMap, impactMap } = buildDependencyGraph(resources, modules);
+  
+  // Store dependency data globally for use in impact analysis
+  window.tfDependencyData = { dependencyMap, impactMap, elements };
   
   // Debounce graph updates to prevent continuous reloading
   clearTimeout(graphUpdateTimer);
