@@ -6,7 +6,7 @@ console.log('content.js: Starting injection');
     console.log('content.js: Already injected');
     return;
   }
-  fetch(chrome.runtime.getURL('index.html'))
+  fetch(chrome.runtime.getURL('src/index.html'))
     .then(r => {
       console.log('content.js: Fetched index.html, status:', r.status);
       if (!r.ok) throw new Error('Failed to fetch index.html');

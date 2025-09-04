@@ -1,0 +1,33 @@
+{
+  "name": "terraform-resource-explorer",
+  "version": "1.0.0",
+  "description": "A browser extension that visualizes Terraform configurations as interactive dependency graphs",
+  "main": "script.js",
+  "scripts": {
+    "build": "echo 'Extension ready for distribution'",
+    "package": "zip -r terraform-resource-explorer-v1.0.zip . -x '*.git*' '*.DS_Store*' 'node_modules/*' 'package-lock.json'"
+  },
+  "keywords": [
+    "terraform",
+    "browser-extension",
+    "visualization",
+    "dependency-graph",
+    "hcl",
+    "infrastructure-as-code"
+  ],
+  "author": "Terraform Resource Explorer Team",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/terraform-resource-explorer.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yourusername/terraform-resource-explorer/issues"
+  },
+  "homepage": "https://github.com/yourusername/terraform-resource-explorer#readme",
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "devDependencies": {},
+  "dependencies": {}
+}

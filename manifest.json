@@ -1,15 +1,28 @@
 {
   "manifest_version": 3,
   "name": "Terraform Resource Explorer",
-  "version": "1.0",
-  "permissions": ["activeTab"],
+  "version": "1.0.0",
+  "description": "Visualize Terraform configurations as interactive dependency graphs with real-time parsing and resource exploration.",
+  "permissions": [],
+  "host_permissions": [
+    "https://github.com/*",
+    "https://github.dev/*"
+  ],
   "content_scripts": [{
     "matches": ["https://github.com/*", "https://github.dev/*"],
-    "js": ["lib/cytoscape.min.js", "content.js", "script.js"],
+    "js": ["src/lib/cytoscape.min.js", "src/js/content.js", "src/js/script.js"],
     "run_at": "document_idle"
   }],
   "web_accessible_resources": [{
-    "resources": ["index.html"],
+    "resources": [
+      "src/index.html",
+      "src/lib/*"
+    ],
     "matches": ["https://github.com/*", "https://github.dev/*"]
-  }]
+  }],
+  "icons": {
+    "16": "assets/icons/icon16.png",
+    "48": "assets/icons/icon96.png",
+    "128": "assets/icons/store-icon-128.png"
+  }
 }

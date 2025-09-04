@@ -6,47 +6,8 @@ let viewportSaveTimer = null;
 console.log('script.js: Script loaded');
 
 // --------- Globals ----------
-// Function to dynamically load AWS documentation URLs from CSV
-async function loadAwsDocUrls() {
-  try {
-    const response = await fetch('aws_docs_menu_links_full (1).csv');
-    const csvText = await response.text();
-    const lines = csvText.split('\n');
-    const awsDocUrls = {};
-    
-    // Skip header line and process each line
-    for (let i = 1; i < lines.length; i++) {
-      const line = lines[i].trim();
-      if (!line) continue;
-      
-      // Parse CSV line (handling quoted values)
-      const match = line.match(/^"([^"]+)","([^"]+)"$/);
-      if (match) {
-        const resourceName = match[1];
-        const url = match[2];
-        
-        // Only store AWS resource URLs (not guides, functions, etc.)
-        if (resourceName.startsWith('aws_') && url.includes('/docs/resources/')) {
-          awsDocUrls[resourceName] = url;
-        }
-      }
-    }
-    
-    return awsDocUrls;
-  } catch (error) {
-    console.warn('Failed to load AWS documentation URLs from CSV:', error);
-    return {};
-  }
-}
-
-// Global variable to store AWS documentation URLs
+// Global variable to store AWS documentation URLs (using pattern-based fallback)
 let awsDocUrls = {};
-
-// Initialize AWS documentation URLs when the script loads
-loadAwsDocUrls().then(urls => {
-  awsDocUrls = urls;
-  console.log(`Loaded ${Object.keys(awsDocUrls).length} AWS documentation URLs`);
-});
 
 // Function to generate provider documentation URLs
 function getProviderDocUrl(resourceType) {
@@ -188,10 +149,13 @@ function collectCodeText() {
   ];
 
   let nodes = [];
+  let selector = '';
+  
   for (const sel of candidateSelectors) {
     const found = document.querySelectorAll(sel);
     if (found && found.length) {
       nodes = Array.from(found);
+      selector = sel;
       console.log('processTerraformFile: Found content elements with selector:', sel, 'Count:', nodes.length);
       break;
     }
@@ -199,11 +163,78 @@ function collectCodeText() {
 
   if (!nodes.length) return '';
 
-  // Preserve indentation & blank lines; normalize NBSPs
+  // Try to extract line numbers from GitHub-style line containers
+  if (selector.includes('js-file-line-container')) {
+    // For GitHub, get the line numbers from the table structure
+    const lineContainers = document.querySelectorAll('table.js-file-line-container tr');
+    const linesWithNumbers = [];
+    
+    lineContainers.forEach((row, index) => {
+      const lineNumberCell = row.querySelector('td.blob-num');
+      const codeCell = row.querySelector('td.blob-code');
+      
+      if (lineNumberCell && codeCell) {
+        const lineNum = parseInt(lineNumberCell.textContent.trim());
+        const codeText = codeCell.textContent || '';
+        
+        linesWithNumbers.push({
+          lineNumber: lineNum,
+          text: codeText.replace(/\u00a0/g, '')
+        });
+      }
+    });
+    
+    if (linesWithNumbers.length > 0) {
+      // Sort by line number and return the text, preserving empty lines
+      linesWithNumbers.sort((a, b) => a.lineNumber - b.lineNumber);
+      const result = linesWithNumbers.map(item => item.text).join('\n');
+      console.log('GitHub content extraction: Found', linesWithNumbers.length, 'lines');
+      return result;
+    }
+  }
+
+  // Fallback: Preserve indentation & blank lines; normalize NBSPs
   const lines = nodes.map(n => (n.textContent || '').replace(/\u00a0/g, ''));
   // If we matched whole blocks (pre/code) instead of per-line, don't join by \n again
   const combined = lines.join('\n');
   return combined.includes('\n') ? combined : lines.join('\n');
+}
+
+// Function to get line number mapping for GitHub-style code viewers
+function getLineNumberMapping() {
+  // Try to get line numbers from GitHub-style line containers
+  const lineContainers = document.querySelectorAll('table.js-file-line-container tr');
+  if (lineContainers.length === 0) return null;
+  
+  const lineMapping = new Map();
+  const linesWithNumbers = [];
+  
+  lineContainers.forEach((row, index) => {
+    const lineNumberCell = row.querySelector('td.blob-num');
+    const codeCell = row.querySelector('td.blob-code');
+    
+    if (lineNumberCell && codeCell) {
+      const lineNum = parseInt(lineNumberCell.textContent.trim());
+      const codeText = codeCell.textContent || '';
+      
+      linesWithNumbers.push({
+        lineNumber: lineNum,
+        text: codeText.replace(/\u00a0/g, ''),
+        originalIndex: index
+      });
+    }
+  });
+  
+  // Sort by line number to match the content collection order
+  linesWithNumbers.sort((a, b) => a.lineNumber - b.lineNumber);
+  
+  // Create mapping from sorted array index to actual line number
+  linesWithNumbers.forEach((item, sortedIndex) => {
+    lineMapping.set(sortedIndex, item.lineNumber);
+    console.log(`Line mapping: sorted array index ${sortedIndex} -> line number ${item.lineNumber}, content: "${item.text.trim()}"`);
+  });
+  
+  return lineMapping;
 }
 
 // --------- Parser ----------
@@ -214,23 +245,40 @@ function parseHCL(content) {
   const issues = [];
   const lines = content.split('\n');
 
+  // Try to parse directly from GitHub DOM if available
+  const lineContainers = document.querySelectorAll('table.js-file-line-container tr');
+  if (lineContainers.length > 0) {
+    console.log('Parsing directly from GitHub DOM structure');
+    return parseFromGitHubDOM(lineContainers);
+  }
+
+  // Fallback to content parsing
+  const lineMapping = getLineNumberMapping();
+
   let currentResource = null;
   let currentModule = null;
   let currentBlock = null;
 
   lines.forEach((raw, index) => {
     const line = raw.trim();
+    // Get actual line number from mapping, or fall back to array index + 1
+    const actualLineNumber = lineMapping ? (lineMapping.get(index) || index + 1) : index + 1;
+    
+    // Skip empty lines but still process them for line number mapping
+    if (!line) return;
+    
     if (line.startsWith('resource ')) {
       const m = line.match(/resource\s+"([^"]+)"\s+"([^"]+)"/);
       if (m) {
+        console.log(`Found resource ${m[1]}.${m[2]} at array index ${index}, assigned line number ${actualLineNumber}`);
         currentResource = { 
           type: m[1], 
           name: m[2], 
-          line: index + 1, 
+          line: actualLineNumber, 
           attributes: [],
           depends_on: [],
           references: [],
-          blockStart: index + 1
+          blockStart: actualLineNumber
         };
         currentBlock = currentResource;
         resources.push(currentResource);
@@ -238,13 +286,14 @@ function parseHCL(content) {
     } else if (line.startsWith('module ')) {
       const m = line.match(/module\s+"([^"]+)"/);
       if (m) {
+        console.log(`Found module ${m[1]} at array index ${index}, assigned line number ${actualLineNumber}`);
         currentModule = { 
           name: m[1], 
-          line: index + 1, 
+          line: actualLineNumber, 
           source: '',
           depends_on: [],
           references: [],
-          blockStart: index + 1
+          blockStart: actualLineNumber
         };
         currentBlock = currentModule;
         modules.push(currentModule);
@@ -273,10 +322,10 @@ function parseHCL(content) {
 
   // Add block end lines
   resources.forEach(r => {
-    r.blockEnd = findBlockEnd(lines, r.blockStart);
+    r.blockEnd = findBlockEnd(lines, r.blockStart, lineMapping);
   });
   modules.forEach(m => {
-    m.blockEnd = findBlockEnd(lines, m.blockStart);
+    m.blockEnd = findBlockEnd(lines, m.blockStart, lineMapping);
   });
 
   resources.forEach(r => {
@@ -294,15 +343,150 @@ function parseHCL(content) {
   return { resources, modules, issues };
 }
 
+// Parse directly from GitHub DOM structure
+function parseFromGitHubDOM(lineContainers) {
+  console.log('parseFromGitHubDOM: Starting direct DOM parsing');
+  const resources = [];
+  const modules = [];
+  const issues = [];
+
+  let currentResource = null;
+  let currentModule = null;
+  let currentBlock = null;
+
+  lineContainers.forEach((row, index) => {
+    const lineNumberCell = row.querySelector('td.blob-num');
+    const codeCell = row.querySelector('td.blob-code');
+    
+    if (!lineNumberCell || !codeCell) return;
+    
+    const lineNumber = parseInt(lineNumberCell.textContent.trim());
+    const codeText = codeCell.textContent || '';
+    const line = codeText.trim();
+    
+    console.log(`Processing line ${lineNumber}: "${line}"`);
+    
+    if (line.startsWith('resource ')) {
+      const m = line.match(/resource\s+"([^"]+)"\s+"([^"]+)"/);
+      if (m) {
+        console.log(`Found resource ${m[1]}.${m[2]} at line ${lineNumber}`);
+        currentResource = { 
+          type: m[1], 
+          name: m[2], 
+          line: lineNumber, 
+          attributes: [],
+          depends_on: [],
+          references: [],
+          blockStart: lineNumber
+        };
+        currentBlock = currentResource;
+        resources.push(currentResource);
+      }
+    } else if (line.startsWith('module ')) {
+      const m = line.match(/module\s+"([^"]+)"/);
+      if (m) {
+        console.log(`Found module ${m[1]} at line ${lineNumber}`);
+        currentModule = { 
+          name: m[1], 
+          line: lineNumber, 
+          source: '',
+          depends_on: [],
+          references: [],
+          blockStart: lineNumber
+        };
+        currentBlock = currentModule;
+        modules.push(currentModule);
+      }
+    } else if (currentBlock && /^\w+\s*=/.test(line)) {
+      const parts = line.split('=');
+      const attr = parts[0].trim();
+      const value = parts.slice(1).join('=').trim();
+      
+      // Parse depends_on explicitly
+      if (attr === 'depends_on') {
+        const deps = parseDependsOnValue(value);
+        currentBlock.depends_on.push(...deps);
+      }
+      
+      // Check for implicit references in attribute values
+      const refs = extractReferences(value);
+      currentBlock.references.push(...refs);
+      
+      currentBlock.attributes.push({ name: attr, value: value });
+    } else if (currentModule && line.startsWith('source ')) {
+      const m = line.match(/source\s*=\s*"([^"]+)"/);
+      if (m) currentModule.source = m[1];
+    }
+  });
+
+  // Add block end lines
+  resources.forEach(r => {
+    r.blockEnd = findBlockEndFromDOM(lineContainers, r.blockStart);
+  });
+  modules.forEach(m => {
+    m.blockEnd = findBlockEndFromDOM(lineContainers, m.blockStart);
+  });
+
+  resources.forEach(r => {
+    const req = requiredAttributes[r.type] || [];
+    req.forEach(a => {
+      if (!r.attributes.some(attr => attr.name === a)) {
+        issues.push(`Missing required attribute "${a}" for ${r.type}.${r.name} at line ${r.line}`);
+      }
+    });
+  });
+
+  console.log('parseFromGitHubDOM: Resources:', resources);
+  console.log('parseFromGitHubDOM: Modules:', modules);
+  console.log('parseFromGitHubDOM: Issues:', issues);
+  return { resources, modules, issues };
+}
+
+// Helper function to find the end of a block from DOM
+function findBlockEndFromDOM(lineContainers, startLine) {
+  let depth = 0;
+  let foundStart = false;
+  
+  for (let i = 0; i < lineContainers.length; i++) {
+    const row = lineContainers[i];
+    const lineNumberCell = row.querySelector('td.blob-num');
+    const codeCell = row.querySelector('td.blob-code');
+    
+    if (!lineNumberCell || !codeCell) continue;
+    
+    const lineNumber = parseInt(lineNumberCell.textContent.trim());
+    const codeText = codeCell.textContent || '';
+    
+    if (lineNumber === startLine) {
+      foundStart = true;
+    }
+    
+    if (foundStart) {
+      if (codeText.includes('{')) depth++;
+      if (codeText.includes('}')) {
+        depth--;
+        if (depth === 0) return lineNumber;
+      }
+    }
+  }
+  
+  return startLine; // Fallback
+}
+
+
+
 // Helper function to find the end of a block
-function findBlockEnd(lines, startLine) {
+function findBlockEnd(lines, startLine, lineMapping) {
   let depth = 0;
   for (let i = startLine - 1; i < lines.length; i++) {
     const line = lines[i];
     if (line.includes('{')) depth++;
     if (line.includes('}')) {
       depth--;
-      if (depth === 0) return i + 1;
+      if (depth === 0) {
+        // Return actual line number if mapping is available
+        return lineMapping ? (lineMapping.get(i) || i + 1) : i + 1;
+      }
     }
   }
   return lines.length;
@@ -685,33 +869,150 @@ function highlightImpactChain(selectedNodeId, impactedResources, cy) {
 }
 
 function createGraphControls(container) {
-  // Create controls container
-  const controlsDiv = document.createElement('div');
-  controlsDiv.setAttribute('data-graph-controls', 'true');
-  controlsDiv.style.cssText = `
+  // Create unified toolbar at bottom
+  const toolbarDiv = document.createElement('div');
+  toolbarDiv.setAttribute('data-graph-toolbar', 'true');
+  toolbarDiv.style.cssText = `
     position: absolute;
-    top: 10px;
-    right: 10px;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 50px;
+    background: linear-gradient(to bottom, rgba(255,255,255,0.95), rgba(255,255,255,0.98));
+    border-top: 1px solid #ddd;
     display: flex;
-    flex-direction: column;
-    gap: 5px;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 12px;
     z-index: 1000;
+    box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
   `;
 
-  // Create legend
+  // Create legend controls at bottom left (where legend was)
+  const legendControlsDiv = document.createElement('div');
+  legendControlsDiv.setAttribute('data-legend-controls', 'true');
+  legendControlsDiv.style.cssText = `
+    position: absolute;
+    bottom: 60px;
+    left: 10px;
+    background: rgba(255, 255, 255, 0.95);
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 8px;
+    font-size: 11px;
+    z-index: 1000;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  `;
+
+  // Legend toggle button
+  const legendBtn = document.createElement('button');
+  legendBtn.innerHTML = 'Legend';
+  legendBtn.title = 'Toggle Legend';
+  legendBtn.style.cssText = `
+    width: 55px;
+    height: 28px;
+    border: 1px solid #ddd;
+    background: #fff;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 10px;
+    font-weight: bold;
+    color: #333;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    transition: all 0.2s ease;
+  `;
+  legendBtn.onmouseover = () => legendBtn.style.background = '#f0f0f0';
+  legendBtn.onmouseout = () => legendBtn.style.background = '#fff';
+  legendBtn.onclick = () => {
+    const content = document.getElementById('legend-content');
+    const toggle = document.getElementById('legend-toggle');
+    const legendDiv = document.querySelector('[data-graph-legend]');
+    const legendControls = document.querySelector('[data-legend-controls]');
+    if (content && toggle && legendDiv) {
+      window.legendExpanded = !window.legendExpanded;
+      content.style.display = window.legendExpanded ? 'block' : 'none';
+      toggle.textContent = window.legendExpanded ? '▼' : '▶';
+      
+      // Move legend to top left when expanded, back to bottom left when collapsed
+      if (window.legendExpanded) {
+        legendDiv.style.bottom = 'auto';
+        legendDiv.style.top = '10px';
+        legendDiv.style.left = '10px';
+        // Hide the legend controls when legend is expanded
+        if (legendControls) {
+          legendControls.style.display = 'none';
+        }
+      } else {
+        legendDiv.style.top = 'auto';
+        legendDiv.style.bottom = '60px';
+        legendDiv.style.left = '10px';
+        // Show the legend controls when legend is collapsed
+        if (legendControls) {
+          legendControls.style.display = 'flex';
+        }
+      }
+    }
+  };
+
+  // Zoom in button
+  const zoomInBtn = document.createElement('button');
+  zoomInBtn.innerHTML = '+';
+  zoomInBtn.title = 'Zoom In';
+  zoomInBtn.style.cssText = `
+    width: 28px;
+    height: 28px;
+    border: 1px solid #ddd;
+    background: #fff;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: bold;
+    color: #333;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    transition: all 0.2s ease;
+  `;
+  zoomInBtn.onmouseover = () => zoomInBtn.style.background = '#f0f0f0';
+  zoomInBtn.onmouseout = () => zoomInBtn.style.background = '#fff';
+  zoomInBtn.onclick = () => cy.zoom({ level: cy.zoom() * 1.2 });
+
+  // Zoom out button
+  const zoomOutBtn = document.createElement('button');
+  zoomOutBtn.innerHTML = '−';
+  zoomOutBtn.title = 'Zoom Out';
+  zoomOutBtn.style.cssText = zoomInBtn.style.cssText;
+  zoomOutBtn.onmouseover = () => zoomOutBtn.style.background = '#f0f0f0';
+  zoomOutBtn.onmouseout = () => zoomOutBtn.style.background = '#fff';
+  zoomOutBtn.onclick = () => cy.zoom({ level: cy.zoom() / 1.2 });
+
+  legendControlsDiv.appendChild(legendBtn);
+  legendControlsDiv.appendChild(zoomInBtn);
+  legendControlsDiv.appendChild(zoomOutBtn);
+
+  // Create legend at bottom
   const legendDiv = document.createElement('div');
   legendDiv.setAttribute('data-graph-legend', 'true');
   legendDiv.style.cssText = `
     position: absolute;
-    top: 10px;
+    bottom: 60px;
     left: 10px;
-    background: rgba(255, 255, 255, 0.9);
+    background: rgba(255, 255, 255, 0.95);
     border: 1px solid #ddd;
-    border-radius: 4px;
-    padding: 8px;
+    border-radius: 8px;
+    padding: 12px;
     font-size: 11px;
     z-index: 1000;
-    min-width: 120px;
+    min-width: 140px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    transition: all 0.3s ease;
   `;
   
   // Create collapsible legend content
@@ -744,6 +1045,12 @@ function createGraphControls(container) {
     <div id="draw-status" style="margin-top: 8px; border-top: 1px solid #ddd; padding-top: 4px; font-size: 10px; color: #666;">
       <span id="draw-status-text">Draw mode: Inactive</span>
     </div>
+    <div style="margin-top: 8px; border-top: 1px solid #ddd; padding-top: 4px; font-size: 10px; color: #666;">
+      <div style="font-weight: bold; margin-bottom: 2px;">Layout:</div>
+      <div style="margin: 1px 0;">Tree: Hierarchical by dependencies</div>
+      <div style="margin: 1px 0;">Force: Dynamic force-directed</div>
+      <div style="margin: 1px 0;">Grid: Organized grid layout</div>
+    </div>
   `;
   
   // Create legend header with toggle
@@ -763,14 +1070,34 @@ function createGraphControls(container) {
   `;
   
   // Add toggle functionality
-  let legendExpanded = false;
   legendHeader.onclick = () => {
-    legendExpanded = !legendExpanded;
+    window.legendExpanded = !window.legendExpanded;
     const content = document.getElementById('legend-content');
     const toggle = document.getElementById('legend-toggle');
-    if (content && toggle) {
-      content.style.display = legendExpanded ? 'block' : 'none';
-      toggle.textContent = legendExpanded ? '▼' : '▶';
+    const legendDiv = document.querySelector('[data-graph-legend]');
+    const legendControls = document.querySelector('[data-legend-controls]');
+    if (content && toggle && legendDiv) {
+      content.style.display = window.legendExpanded ? 'block' : 'none';
+      toggle.textContent = window.legendExpanded ? '▼' : '▶';
+      
+      // Move legend to top left when expanded, back to bottom left when collapsed
+      if (window.legendExpanded) {
+        legendDiv.style.bottom = 'auto';
+        legendDiv.style.top = '10px';
+        legendDiv.style.left = '10px';
+        // Hide the legend controls when legend is expanded
+        if (legendControls) {
+          legendControls.style.display = 'none';
+        }
+      } else {
+        legendDiv.style.top = 'auto';
+        legendDiv.style.bottom = '60px';
+        legendDiv.style.left = '10px';
+        // Show the legend controls when legend is collapsed
+        if (legendControls) {
+          legendControls.style.display = 'flex';
+        }
+      }
     }
   };
   
@@ -783,51 +1110,64 @@ function createGraphControls(container) {
     content.style.display = 'none';
   }
 
-  // Zoom in button
-  const zoomInBtn = document.createElement('button');
-  zoomInBtn.innerHTML = '+';
-  zoomInBtn.title = 'Zoom In';
-  zoomInBtn.style.cssText = `
-    width: 60px;
-    height: 30px;
-    border: 1px solid #ccc;
-    background: #fff;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 9px;
-    font-weight: bold;
-    color: #333;
+  // Set legend toggle to closed state
+  const toggle = document.getElementById('legend-toggle');
+  if (toggle) {
+    toggle.textContent = '▶';
+  }
+  
+  // Also set the global state to closed
+  window.legendExpanded = false;
+  
+  // Ensure legend stays closed on any state changes
+  setTimeout(() => {
+    const content = document.getElementById('legend-content');
+    const toggle = document.getElementById('legend-toggle');
+    if (content && toggle) {
+      content.style.display = 'none';
+      toggle.textContent = '▶';
+      window.legendExpanded = false;
+    }
+  }, 100);
+
+  // Create left section (empty for now)
+  const leftSection = document.createElement('div');
+  leftSection.style.cssText = `
     display: flex;
     align-items: center;
-    justify-content: center;
-    padding: 0 2px;
-    white-space: nowrap;
-    overflow: hidden;
+    gap: 8px;
   `;
-  zoomInBtn.onclick = () => cy.zoom({ level: cy.zoom() * 1.2 });
 
-  // Zoom out button
-  const zoomOutBtn = document.createElement('button');
-  zoomOutBtn.innerHTML = '−';
-  zoomOutBtn.title = 'Zoom Out';
-  zoomOutBtn.style.cssText = zoomInBtn.style.cssText;
-  zoomOutBtn.onclick = () => cy.zoom({ level: cy.zoom() / 1.2 });
-
-  // Reset view button
-  const resetBtn = document.createElement('button');
-  resetBtn.innerHTML = 'Home';
-  resetBtn.title = 'Reset View';
-  resetBtn.style.cssText = zoomInBtn.style.cssText;
-  resetBtn.onclick = () => {
-    cy.fit();
-    cy.center();
-  };
+  // Create center section (mode controls)
+  const centerSection = document.createElement('div');
+  centerSection.style.cssText = `
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  `;
 
   // Pan mode toggle
   const panBtn = document.createElement('button');
   panBtn.innerHTML = 'Pan';
   panBtn.title = 'Pan Mode';
-  panBtn.style.cssText = zoomInBtn.style.cssText;
+  panBtn.style.cssText = `
+    width: 40px;
+    height: 32px;
+    border: 1px solid #ddd;
+    background: #fff;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: bold;
+    color: #333;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    transition: all 0.2s ease;
+  `;
+  panBtn.onmouseover = () => panBtn.style.background = '#f0f0f0';
+  panBtn.onmouseout = () => panBtn.style.background = '#fff';
   panBtn.onclick = () => {
     const isPanning = cy.panningEnabled();
     cy.panningEnabled(!isPanning);
@@ -839,7 +1179,115 @@ function createGraphControls(container) {
   const drawBtn = document.createElement('button');
   drawBtn.innerHTML = 'Draw';
   drawBtn.title = 'Draw Relationships';
-  drawBtn.style.cssText = zoomInBtn.style.cssText;
+  drawBtn.style.cssText = `
+    width: 40px;
+    height: 32px;
+    border: 1px solid #ddd;
+    background: #fff;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: bold;
+    color: #333;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    transition: all 0.2s ease;
+  `;
+  drawBtn.onclick = () => {
+    const isDrawing = drawBtn.classList.contains('active');
+    if (isDrawing) {
+      // Exit draw mode
+      drawBtn.classList.remove('active');
+      drawBtn.style.background = '#fff';
+      drawBtn.title = 'Draw Relationships';
+      container.style.cursor = 'default';
+      
+      // Reset any highlighted nodes - preserve labels
+      cy.nodes().forEach(node => {
+        const nodeType = node.data('type');
+        const nodeLabel = node.data('label'); // Preserve the original label
+        
+        if (nodeType === 'module') {
+          node.style({
+            'background-color': '#FF9800',
+            'border-color': '#E65100',
+            'shape': 'diamond',
+            'width': '60px',
+            'height': '60px',
+            'label': nodeLabel, // Use the preserved label
+            'color': '#fff',
+            'text-valign': 'center',
+            'text-halign': 'center',
+            'font-size': '12px',
+            'font-weight': 'bold',
+            'text-wrap': 'wrap',
+            'text-max-width': '80px',
+            'text-outline-color': '#000',
+            'text-outline-width': 1,
+            'text-outline-opacity': 0.5
+          });
+        } else {
+          node.style({
+            'background-color': '#4CAF50',
+            'border-color': '#2E7D32',
+            'shape': 'rectangle',
+            'width': '60px',
+            'height': '60px',
+            'label': nodeLabel, // Use the preserved label
+            'color': '#fff',
+            'text-valign': 'center',
+            'text-halign': 'center',
+            'font-size': '12px',
+            'font-weight': 'bold',
+            'text-wrap': 'wrap',
+            'text-max-width': '80px',
+            'text-outline-color': '#000',
+            'text-outline-width': 1,
+            'text-outline-opacity': 0.5
+          });
+        }
+      });
+      
+      // Reset drawing state
+      drawingStartNode = null;
+      console.log('Draw mode: Disabled');
+      
+      // Update status indicator
+      const statusText = document.getElementById('draw-status-text');
+      if (statusText) {
+        statusText.textContent = 'Draw mode: Inactive';
+        statusText.style.color = '#666';
+      }
+    } else {
+      // Enter draw mode
+      drawBtn.classList.add('active');
+      drawBtn.style.background = '#e0e0e0';
+      drawBtn.title = 'Exit Draw Mode';
+      container.style.cursor = 'crosshair';
+      console.log('Draw mode: Enabled - Click on nodes to create relationships');
+      
+      // Close legend when entering draw mode
+      const content = document.getElementById('legend-content');
+      const toggle = document.getElementById('legend-toggle');
+      if (content && toggle) {
+        content.style.display = 'none';
+        toggle.textContent = '▶';
+        legendExpanded = false;
+      }
+      
+      // Update status indicator
+      const statusText = document.getElementById('draw-status-text');
+      if (statusText) {
+        statusText.textContent = 'Draw mode: Active - Click nodes to create relationships';
+        statusText.style.color = '#2196F3';
+      }
+    }
+  };
+
+  drawBtn.onmouseover = () => drawBtn.style.background = '#f0f0f0';
+  drawBtn.onmouseout = () => drawBtn.style.background = '#fff';
   drawBtn.onclick = () => {
     const isDrawing = drawBtn.classList.contains('active');
     if (isDrawing) {
@@ -935,7 +1383,24 @@ function createGraphControls(container) {
   const clearBtn = document.createElement('button');
   clearBtn.innerHTML = 'Clear';
   clearBtn.title = 'Clear All Relationships';
-  clearBtn.style.cssText = zoomInBtn.style.cssText;
+  clearBtn.style.cssText = `
+    width: 45px;
+    height: 32px;
+    border: 1px solid #ddd;
+    background: #fff;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: bold;
+    color: #333;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    transition: all 0.2s ease;
+  `;
+  clearBtn.onmouseover = () => clearBtn.style.background = '#f0f0f0';
+  clearBtn.onmouseout = () => clearBtn.style.background = '#fff';
   clearBtn.onclick = () => {
           if (confirm('Clear all drawn relationships?')) {
         cy.elements('edge').remove();
@@ -947,6 +1412,38 @@ function createGraphControls(container) {
         }, 100);
       }
   };
+  
+  // Reset view button
+  const resetBtn = document.createElement('button');
+  resetBtn.innerHTML = 'Home';
+  resetBtn.title = 'Reset View';
+  resetBtn.style.cssText = `
+    width: 45px;
+    height: 32px;
+    border: 1px solid #ddd;
+    background: #fff;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: bold;
+    color: #333;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    transition: all 0.2s ease;
+  `;
+  resetBtn.onmouseover = () => resetBtn.style.background = '#f0f0f0';
+  resetBtn.onmouseout = () => resetBtn.style.background = '#fff';
+  resetBtn.onclick = () => {
+    cy.fit();
+    cy.center();
+  };
+
+  centerSection.appendChild(resetBtn);
+  centerSection.appendChild(panBtn);
+  centerSection.appendChild(drawBtn);
+  centerSection.appendChild(clearBtn);
 
   // Reset impact highlighting button (hidden by default)
   const resetImpactBtn = document.createElement('button');
@@ -1024,13 +1521,89 @@ function createGraphControls(container) {
   
 
 
-  controlsDiv.appendChild(zoomInBtn);
-  controlsDiv.appendChild(zoomOutBtn);
-  controlsDiv.appendChild(resetBtn);
-  controlsDiv.appendChild(panBtn);
-  controlsDiv.appendChild(drawBtn);
-  controlsDiv.appendChild(clearBtn);
-  controlsDiv.appendChild(resetImpactBtn);
+  // Create right section (layout controls)
+  const rightSection = document.createElement('div');
+  rightSection.style.cssText = `
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  `;
+
+  // Layout buttons
+  const treeBtn = document.createElement('button');
+  treeBtn.innerHTML = 'Tree';
+  treeBtn.title = 'Hierarchical Tree Layout';
+  treeBtn.style.cssText = `
+    width: 40px;
+    height: 32px;
+    border: 1px solid #ddd;
+    background: #fff;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: bold;
+    color: #333;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    transition: all 0.2s ease;
+  `;
+  treeBtn.onmouseover = () => treeBtn.style.background = '#f0f0f0';
+  treeBtn.onmouseout = () => treeBtn.style.background = '#fff';
+  treeBtn.onclick = () => {
+    applyHierarchicalLayout(cy);
+  };
+
+  const forceBtn = document.createElement('button');
+  forceBtn.innerHTML = 'Force';
+  forceBtn.title = 'Force-Directed Layout';
+  forceBtn.style.cssText = treeBtn.style.cssText;
+  forceBtn.onmouseover = () => forceBtn.style.background = '#f0f0f0';
+  forceBtn.onmouseout = () => forceBtn.style.background = '#fff';
+  forceBtn.onclick = () => {
+    cy.layout({
+      name: 'cose',
+      idealEdgeLength: 120,
+      nodeOverlap: 30,
+      refresh: 20,
+      fit: true,
+      padding: 30,
+      randomize: false,
+      componentSpacing: 100,
+      nodeRepulsion: 400000,
+      gravity: 80,
+      numIter: 1000,
+      initialTemp: 200,
+      coolingFactor: 0.95,
+      minTemp: 1.0
+    }).run();
+  };
+
+  const gridBtn = document.createElement('button');
+  gridBtn.innerHTML = 'Grid';
+  gridBtn.title = 'Grid Layout';
+  gridBtn.style.cssText = treeBtn.style.cssText;
+  gridBtn.onmouseover = () => gridBtn.style.background = '#f0f0f0';
+  gridBtn.onmouseout = () => gridBtn.style.background = '#fff';
+  gridBtn.onclick = () => {
+    cy.layout({
+      name: 'grid',
+      fit: true,
+      padding: 30,
+      animate: true,
+      animationDuration: 1000
+    }).run();
+  };
+
+  rightSection.appendChild(treeBtn);
+  rightSection.appendChild(forceBtn);
+  rightSection.appendChild(gridBtn);
+
+  // Add sections to toolbar
+  toolbarDiv.appendChild(leftSection);
+  toolbarDiv.appendChild(centerSection);
+  toolbarDiv.appendChild(rightSection);
 
   // Create status indicator for auto-save
   const statusDiv = document.createElement('div');
@@ -1095,7 +1668,7 @@ function createGraphControls(container) {
     }
   });
 
-  return { controls: controlsDiv, legend: legendDiv, details: detailsDiv, status: statusDiv };
+  return { controls: toolbarDiv, legend: legendDiv, legendControls: legendControlsDiv, details: detailsDiv, status: statusDiv };
 }
 
 function copyToClipboard(text) {
@@ -1217,9 +1790,6 @@ function showNodeDetails(node) {
         <div style="margin-bottom: 12px; font-size: 14px;">
           <strong style="color: #000;">Name:</strong> <span style="color: #000; font-family: 'Courier New', monospace; font-weight: bold; font-size: 14px; background: #f0f0f0; padding: 2px 6px; border-radius: 3px;">${resource.name}</span>
         </div>
-        <div style="margin-bottom: 12px; font-size: 14px;">
-          <strong style="color: #000;">Line:</strong> <span style="color: #000; font-weight: bold; font-size: 14px;">${resource.line}</span>
-        </div>
         ${hasMissing ? `
                  <div style="margin-bottom: 16px; padding: 12px; background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 6px;">
            <strong style="color: #000;">Missing Required Attributes:</strong>
@@ -1287,9 +1857,6 @@ function showNodeDetails(node) {
         </div>
         <div style="margin-bottom: 6px;">
           <strong>Name:</strong> ${module.name}
-        </div>
-        <div style="margin-bottom: 6px;">
-          <strong>Line:</strong> ${module.line}
         </div>
         <div style="margin-bottom: 6px;">
           <strong>Source:</strong> ${module.source || 'Not specified'}
@@ -1540,6 +2107,7 @@ function initGraph(elements) {
       container.style.position = 'relative';
       container.appendChild(graphElements.controls);
       container.appendChild(graphElements.legend);
+      container.appendChild(graphElements.legendControls);
       document.body.appendChild(graphElements.details);
       document.body.appendChild(graphElements.status);
 
@@ -1800,23 +2368,10 @@ function initGraph(elements) {
         });
       }
 
-      // Run initial layout only for new graphs
-      cy.layout({
-        name: 'cose',
-        idealEdgeLength: 120,
-        nodeOverlap: 30,
-        refresh: 20,
-        fit: true,
-        padding: 30,
-        randomize: false,
-        componentSpacing: 100,
-        nodeRepulsion: 400000,
-        gravity: 80,
-        numIter: 1000,
-        initialTemp: 200,
-        coolingFactor: 0.95,
-        minTemp: 1.0
-      }).run();
+      // Run initial hierarchical tree layout for new graphs
+      setTimeout(() => {
+        applyHierarchicalLayout(cy);
+      }, 100);
       
       // Store the layout to prevent it from being re-run
       cy.layout = cy.layout.bind(cy);
@@ -1930,14 +2485,14 @@ function ensureSidebar() {
   root.id = 'tf-explorer-root';
   root.innerHTML = `
     <style>
-      #tf-explorer-sidebar{position:fixed;top:10px;right:10px;width:360px;max-height:80vh;overflow:auto;background:#111;color:#eee;border:1px solid #333;border-radius:10px;z-index:2147483647;font:13px/1.4 system-ui,Segoe UI,Roboto,Arial;padding:10px}
+      #tf-explorer-sidebar{position:fixed;top:10px;right:10px;width:550px;max-height:85vh;overflow:auto;background:#111;color:#eee;border:1px solid #333;border-radius:10px;z-index:2147483647;font:13px/1.4 system-ui,Segoe UI,Roboto,Arial;padding:10px}
       #tf-explorer-sidebar h3{margin:6px 0 4px;font-size:14px}
       #tf-explorer-sidebar ul{margin:0 0 8px 16px;padding:0}
       #tf-explorer-sidebar li{margin:2px 0;list-style:disc}
       #tf-explorer-sidebar a{color:#8ab4ff;text-decoration:none}
       #tf-explorer-sidebar .tf-error{color:#ff6b6b}
       #tf-toggle-btn{position:fixed;top:10px;right:380px;padding:6px 10px;border-radius:8px;border:1px solid #333;background:#1b1b1b;color:#eee;z-index:2147483647;cursor:pointer}
-      #tf-graph{height:400px;background:#fafafa;border:2px solid #ddd;border-radius:8px;margin-top:6px;position:relative}
+      #tf-graph{height:500px;background:#fafafa;border:2px solid #ddd;border-radius:8px;margin-top:6px;position:relative}
     </style>
     <button id="tf-toggle-btn">TF Explorer</button>
     <aside id="tf-explorer-sidebar">
@@ -2315,4 +2870,359 @@ function clearGraph() {
   } catch (error) {
     console.error('Failed to clear graph:', error);
   }
+}
+
+// --------- Hierarchical Tree Layout ----------
+function createHierarchicalLayout(elements) {
+  const nodes = elements.filter(el => el.data.id && !el.data.source);
+  const edges = elements.filter(el => el.data.source && el.data.target);
+  
+  // Build adjacency lists
+  const inEdges = new Map(); // incoming edges (dependencies)
+  const outEdges = new Map(); // outgoing edges (dependents)
+  
+  nodes.forEach(node => {
+    inEdges.set(node.data.id, []);
+    outEdges.set(node.data.id, []);
+  });
+  
+  edges.forEach(edge => {
+    const source = edge.data.source;
+    const target = edge.data.target;
+    
+    // Add to adjacency lists
+    if (outEdges.has(source)) {
+      outEdges.get(source).push(target);
+    }
+    if (inEdges.has(target)) {
+      inEdges.get(target).push(source);
+    }
+  });
+  
+  // Find root nodes (nodes with no dependencies)
+  const rootNodes = [];
+  nodes.forEach(node => {
+    if (inEdges.get(node.data.id).length === 0) {
+      rootNodes.push(node.data.id);
+    }
+  });
+  
+  // Calculate levels using BFS
+  const levels = new Map();
+  const visited = new Set();
+  const queue = [];
+  
+  // Start with root nodes at level 0
+  rootNodes.forEach(root => {
+    levels.set(root, 0);
+    queue.push(root);
+    visited.add(root);
+  });
+  
+  // BFS to assign levels
+  while (queue.length > 0) {
+    const current = queue.shift();
+    const currentLevel = levels.get(current);
+    
+    // Process all dependents of current node
+    outEdges.get(current).forEach(dependent => {
+      if (!visited.has(dependent)) {
+        // Check if all dependencies of this dependent are processed
+        const allDepsProcessed = inEdges.get(dependent).every(dep => visited.has(dep));
+        if (allDepsProcessed) {
+          levels.set(dependent, currentLevel + 1);
+          queue.push(dependent);
+          visited.add(dependent);
+        }
+      }
+    });
+  }
+  
+  // Handle any remaining nodes (cycles or isolated nodes)
+  nodes.forEach(node => {
+    if (!levels.has(node.data.id)) {
+      levels.set(node.data.id, 0); // Default to root level
+    }
+  });
+  
+  // Group nodes by level
+  const levelGroups = new Map();
+  nodes.forEach(node => {
+    const level = levels.get(node.data.id);
+    if (!levelGroups.has(level)) {
+      levelGroups.set(level, []);
+    }
+    levelGroups.get(level).push(node.data.id);
+  });
+  
+  // Create layout positions
+  const layout = {
+    name: 'hierarchical-tree',
+    nodeDimensionsIncludeLabels: true,
+    fit: true,
+    padding: 50,
+    animate: true,
+    animationDuration: 1000,
+    animationEasing: 'ease-out',
+    
+    // Custom positioning function
+    ready: function() {
+      const maxLevel = Math.max(...levelGroups.keys());
+      const levelHeight = 150;
+      const nodeSpacing = 120;
+      
+      levelGroups.forEach((nodeIds, level) => {
+        const y = level * levelHeight + 50;
+        const totalWidth = nodeIds.length * nodeSpacing;
+        const startX = (this.width() - totalWidth) / 2;
+        
+        nodeIds.forEach((nodeId, index) => {
+          const node = this.getElementById(nodeId);
+          if (node.length > 0) {
+            const x = startX + index * nodeSpacing;
+            node.position({
+              x: x,
+              y: y
+            });
+          }
+        });
+      });
+    }
+  };
+  
+  return layout;
+}
+
+// Apply hierarchical layout to the graph
+function applyHierarchicalLayout(cy) {
+  if (!cy) return;
+  
+  const nodes = cy.nodes();
+  const edges = cy.edges();
+  
+  // Build dependency graph
+  const inEdges = new Map(); // incoming edges (dependencies)
+  const outEdges = new Map(); // outgoing edges (dependents)
+  
+  nodes.forEach(node => {
+    inEdges.set(node.id(), []);
+    outEdges.set(node.id(), []);
+  });
+  
+  edges.forEach(edge => {
+    const source = edge.source().id();
+    const target = edge.target().id();
+    
+    if (outEdges.has(source)) {
+      outEdges.get(source).push(target);
+    }
+    if (inEdges.has(target)) {
+      inEdges.get(target).push(source);
+    }
+  });
+  
+  // Find root nodes (nodes with no dependencies)
+  const rootNodes = [];
+  nodes.forEach(node => {
+    if (inEdges.get(node.id()).length === 0) {
+      rootNodes.push(node.id());
+    }
+  });
+  
+  // Calculate levels using BFS
+  const levels = new Map();
+  const visited = new Set();
+  const queue = [];
+  
+  // Start with root nodes at level 0
+  rootNodes.forEach(root => {
+    levels.set(root, 0);
+    queue.push(root);
+    visited.add(root);
+  });
+  
+  // BFS to assign levels
+  while (queue.length > 0) {
+    const current = queue.shift();
+    const currentLevel = levels.get(current);
+    
+    // Process all dependents of current node
+    outEdges.get(current).forEach(dependent => {
+      if (!visited.has(dependent)) {
+        // Check if all dependencies of this dependent are processed
+        const allDepsProcessed = inEdges.get(dependent).every(dep => visited.has(dep));
+        if (allDepsProcessed) {
+          levels.set(dependent, currentLevel + 1);
+          queue.push(dependent);
+          visited.add(dependent);
+        }
+      }
+    });
+  }
+  
+  // Handle any remaining nodes (cycles or isolated nodes)
+  nodes.forEach(node => {
+    if (!levels.has(node.id())) {
+      levels.set(node.id(), 0);
+    }
+  });
+  
+  // Group nodes by level
+  const levelGroups = new Map();
+  nodes.forEach(node => {
+    const level = levels.get(node.id());
+    if (!levelGroups.has(level)) {
+      levelGroups.set(level, []);
+    }
+    levelGroups.get(level).push(node.id());
+  });
+  
+  // Position nodes
+  const levelHeight = 120;
+  const nodeSpacing = 100;
+  
+  levelGroups.forEach((nodeIds, level) => {
+    const y = level * levelHeight + 50;
+    const totalWidth = nodeIds.length * nodeSpacing;
+    const startX = (cy.width() - totalWidth) / 2;
+    
+    nodeIds.forEach((nodeId, index) => {
+      const node = cy.getElementById(nodeId);
+      if (node.length > 0) {
+        const x = startX + index * nodeSpacing;
+        node.position({
+          x: x,
+          y: y
+        });
+      }
+    });
+  });
+  
+  // Fit the graph
+  cy.fit();
+}
+
+  // Add layout controls
+  function addLayoutControls(container) {
+    const layoutDiv = document.createElement('div');
+    layoutDiv.setAttribute('data-layout-controls', 'true');
+    layoutDiv.style.cssText = `
+      position: absolute;
+      bottom: 10px;
+      right: 10px;
+      display: flex;
+      flex-direction: row;
+      gap: 8px;
+      z-index: 1000;
+      background: rgba(255, 255, 255, 0.95);
+      padding: 8px 12px;
+      border-radius: 8px;
+      border: 1px solid #ddd;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    `;
+  
+  // Hierarchical Tree Layout button
+  const treeBtn = document.createElement('button');
+  treeBtn.innerHTML = 'Tree';
+  treeBtn.title = 'Hierarchical Tree Layout';
+  treeBtn.style.cssText = `
+    width: 50px;
+    height: 32px;
+    border: 1px solid #ddd;
+    background: #fff;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: bold;
+    color: #333;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    transition: all 0.2s ease;
+  `;
+  treeBtn.onclick = () => {
+    applyHierarchicalLayout(cy);
+  };
+  
+  // Force Layout button (original cose layout)
+  const forceBtn = document.createElement('button');
+  forceBtn.innerHTML = 'Force';
+  forceBtn.title = 'Force-Directed Layout';
+  forceBtn.style.cssText = `
+    width: 55px;
+    height: 32px;
+    border: 1px solid #ddd;
+    background: #fff;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: bold;
+    color: #333;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    transition: all 0.2s ease;
+  `;
+  forceBtn.onclick = () => {
+    cy.layout({
+      name: 'cose',
+      idealEdgeLength: 120,
+      nodeOverlap: 30,
+      refresh: 20,
+      fit: true,
+      padding: 30,
+      randomize: false,
+      componentSpacing: 100,
+      nodeRepulsion: 400000,
+      gravity: 80,
+      numIter: 1000,
+      initialTemp: 200,
+      coolingFactor: 0.95,
+      minTemp: 1.0
+    }).run();
+  };
+  
+  // Grid Layout button
+  const gridBtn = document.createElement('button');
+  gridBtn.innerHTML = 'Grid';
+  gridBtn.title = 'Grid Layout';
+  gridBtn.style.cssText = `
+    width: 45px;
+    height: 32px;
+    border: 1px solid #ddd;
+    background: #fff;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: bold;
+    color: #333;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    transition: all 0.2s ease;
+  `;
+  gridBtn.onclick = () => {
+    cy.layout({
+      name: 'grid',
+      fit: true,
+      padding: 30,
+      animate: true,
+      animationDuration: 1000
+    }).run();
+  };
+  
+  layoutDiv.appendChild(treeBtn);
+  layoutDiv.appendChild(forceBtn);
+  layoutDiv.appendChild(gridBtn);
+  
+  return layoutDiv;
 }
