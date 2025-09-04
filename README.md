@@ -11,9 +11,8 @@ A browser extension that visualizes Terraform configurations as interactive depe
 - **Documentation Links**: Direct links to official Terraform provider documentation
 
 ### 🎨 **Canvas Management**
-- **Save/Load Canvas States**: Preserve your graph layout and customizations per URL
 - **Auto-save**: Automatically saves changes when you modify the graph
-- **Keyboard Shortcuts**: Use `Ctrl+S` to manually save the current state
+- **State Restoration**: Automatically restores your previous layout when returning to a URL
 - **Visual Feedback**: Status indicators show when auto-save occurs
 
 ### 🔧 **Graph Controls**
@@ -21,7 +20,6 @@ A browser extension that visualizes Terraform configurations as interactive depe
 - **Pan Mode**: Navigate around the graph
 - **Draw Mode**: Create custom relationships between resources
 - **Clear Function**: Remove drawn relationships
-- **Save/Load Buttons**: Manual state management
 
 ### 📊 **Resource Information**
 - **Detailed Panels**: View all resource attributes and values
@@ -42,10 +40,9 @@ A browser extension that visualizes Terraform configurations as interactive depe
 3. **Interact**: Click nodes for details, drag to pan, scroll to zoom
 
 ### Canvas State Management
-1. **Auto-save**: Changes are automatically saved every 2 seconds after viewport changes
-2. **Manual Save**: Click the "Save" button or press `Ctrl+S`
-3. **Load State**: Click "Load" to restore your previous layout
-4. **Clear State**: Use "Clear" to remove drawn relationships and reset
+1. **Auto-save**: Changes are automatically saved when you modify the graph
+2. **Automatic Restoration**: Your layout is automatically restored when returning to a URL
+3. **Clear State**: Use "Clear" to remove drawn relationships and reset
 
 ### Drawing Custom Relationships
 1. **Enter Draw Mode**: Click the "Draw" button

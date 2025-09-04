@@ -512,61 +512,22 @@ function createGraphControls(container) {
 
   // Clear all relationships button
   const clearBtn = document.createElement('button');
-  clearBtn.innerHTML = 'C';
+  clearBtn.innerHTML = 'Clear';
   clearBtn.title = 'Clear All Relationships';
   clearBtn.style.cssText = zoomInBtn.style.cssText;
   clearBtn.onclick = () => {
-    if (confirm('Clear all drawn relationships?')) {
-      cy.elements('edge').remove();
-      clearCanvasState();
-    }
+          if (confirm('Clear all drawn relationships?')) {
+        cy.elements('edge').remove();
+        clearGraph();
+        // Test save after clearing
+        setTimeout(() => {
+          console.log('Testing save after clear...');
+          saveGraph();
+        }, 100);
+      }
   };
   
-  // Save button
-  const saveBtn = document.createElement('button');
-  saveBtn.innerHTML = 'Save';
-  saveBtn.title = 'Save Canvas State';
-  saveBtn.style.cssText = zoomInBtn.style.cssText + '; background: #4CAF50; color: white;';
-  saveBtn.onclick = () => {
-    saveCanvasState();
-    // Show brief feedback
-    const originalText = saveBtn.innerHTML;
-    saveBtn.innerHTML = 'Saved!';
-    saveBtn.style.background = '#45a049';
-    setTimeout(() => {
-      saveBtn.innerHTML = originalText;
-      saveBtn.style.background = '#4CAF50';
-    }, 1000);
-  };
-  
-  // Load button
-  const loadBtn = document.createElement('button');
-  loadBtn.innerHTML = 'Load';
-  loadBtn.title = 'Load Canvas State';
-  loadBtn.style.cssText = zoomInBtn.style.cssText + '; background: #2196F3; color: white;';
-  loadBtn.onclick = () => {
-    const savedState = loadCanvasState();
-    if (savedState) {
-      applyCanvasState(savedState);
-      // Show brief feedback
-      const originalText = loadBtn.innerHTML;
-      loadBtn.innerHTML = 'Loaded!';
-      loadBtn.style.background = '#1976D2';
-      setTimeout(() => {
-        loadBtn.innerHTML = originalText;
-        loadBtn.style.background = '#2196F3';
-      }, 1000);
-    } else {
-      // Show error feedback
-      const originalText = loadBtn.innerHTML;
-      loadBtn.innerHTML = 'No Data';
-      loadBtn.style.background = '#f44336';
-      setTimeout(() => {
-        loadBtn.innerHTML = originalText;
-        loadBtn.style.background = '#2196F3';
-      }, 1000);
-    }
-  };
+
 
   controlsDiv.appendChild(zoomInBtn);
   controlsDiv.appendChild(zoomOutBtn);
@@ -574,8 +535,6 @@ function createGraphControls(container) {
   controlsDiv.appendChild(panBtn);
   controlsDiv.appendChild(drawBtn);
   controlsDiv.appendChild(clearBtn);
-  controlsDiv.appendChild(saveBtn);
-  controlsDiv.appendChild(loadBtn);
 
   // Create status indicator for auto-save
   const statusDiv = document.createElement('div');
@@ -975,7 +934,8 @@ function initGraph(elements) {
         }
       ];
 
-      cy = cytoscape({
+      // Create cytoscape instance and assign to global variable
+      const cytoscapeInstance = cytoscape({
         container,
         elements,
         style,
@@ -1004,6 +964,10 @@ function initGraph(elements) {
         minZoom: 0.1,
         maxZoom: 3
       });
+      
+      // Assign to global variable
+      cy = cytoscapeInstance;
+      console.log('Cytoscape instance created and assigned to global cy:', !!cy);
       
       // Ensure proper node styling is applied
       cy.nodes().forEach(node => {
@@ -1125,19 +1089,21 @@ function initGraph(elements) {
       cy.on('cxttap', 'edge', function(evt) {
         const edge = evt.target;
         edge.remove();
-        console.log('Edge deleted:', edge.data('label') || `${edge.source().data('label')} → ${edge.target().data('label')}`);
-        // Auto-save after edge deletion
-        setTimeout(() => saveCanvasState(), 500);
+        console.log('Edge deleted, triggering save...');
+        saveGraph();
       });
 
-      // Add viewport change listener for auto-save
-      cy.on('viewport', function() {
-        // Debounced auto-save on viewport changes
-        clearTimeout(viewportSaveTimer);
-        viewportSaveTimer = setTimeout(() => {
-          saveCanvasState();
-        }, 2000);
-      });
+      // Load saved graph after cytoscape is ready
+      setTimeout(() => {
+        loadGraph();
+      }, 1000);
+      
+      // Start simple auto-save timer
+      setInterval(() => {
+        if (cy) {
+          saveGraph();
+        }
+      }, 30000); // Save every 30 seconds
 
       cy.on('mouseout', 'node', function(evt) {
         const node = evt.target;
@@ -1230,7 +1196,8 @@ function initGraph(elements) {
             console.log('Draw mode: Relationship created');
             
             // Auto-save after creating new relationship
-            setTimeout(() => saveCanvasState(), 500);
+            console.log('Relationship created, triggering save...');
+            saveGraph();
             
             // Update status indicator
             const statusText = document.getElementById('draw-status-text');
@@ -1788,27 +1755,17 @@ const observer = new MutationObserver((mutations) => {
 });
 observer.observe(document.body, { childList: true, subtree: true, characterData: true });
 
-// Add keyboard shortcuts
-document.addEventListener('keydown', function(event) {
-  // Ctrl+S to save canvas state
-  if (event.ctrlKey && event.key === 's') {
-    event.preventDefault();
-    saveCanvasState();
-    
-    // Show visual feedback
-    const saveBtn = document.querySelector('[title="Save Canvas State"]');
-    if (saveBtn) {
-      const originalText = saveBtn.innerHTML;
-      const originalBg = saveBtn.style.background;
-      saveBtn.innerHTML = 'Saved!';
-      saveBtn.style.background = '#45a049';
-      setTimeout(() => {
-        saveBtn.innerHTML = originalText;
-        saveBtn.style.background = originalBg;
-      }, 1000);
-    }
-  }
-});
+
+
+// Test localStorage on startup
+console.log('Testing localStorage...');
+try {
+  localStorage.setItem('test', 'test');
+  localStorage.removeItem('test');
+  console.log('localStorage test: PASSED');
+} catch (error) {
+  console.log('localStorage test: FAILED', error);
+}
 
 // Initial run to ensure popup opens on page load
 setTimeout(() => {
@@ -1817,39 +1774,32 @@ setTimeout(() => {
   processTerraformFile();
 }, 1000);
 
-// Canvas state management
-const CANVAS_STORAGE_PREFIX = 'tf_canvas_state_';
+// Simple auto-save system
+const STORAGE_KEY = 'tf_graph_state';
 
-// Function to get current URL key for storage
-function getCurrentUrlKey() {
-  return CANVAS_STORAGE_PREFIX + btoa(window.location.href).slice(0, 20);
-}
-
-// Function to save canvas state
-function saveCanvasState() {
-  if (!window.cy) return;
-  
-  const state = {
-    timestamp: Date.now(),
-    url: window.location.href,
-    elements: window.cy.json().elements,
-    viewport: {
-      pan: window.cy.pan(),
-      zoom: window.cy.zoom()
-    },
-    drawMode: window.drawMode || false,
-    legendExpanded: window.legendExpanded || false
-  };
+// Simple save function
+function saveGraph() {
+  if (!cy) {
+    console.log('No cytoscape instance available');
+    return;
+  }
   
   try {
-    localStorage.setItem(getCurrentUrlKey(), JSON.stringify(state));
-    console.log('Canvas state saved for:', window.location.href);
+    const data = {
+      url: window.location.href,
+      timestamp: Date.now(),
+      elements: cy.json().elements
+    };
+    
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    console.log('✅ Graph saved successfully');
     
     // Show status indicator
     const statusDiv = document.getElementById('canvas-status');
     if (statusDiv) {
       statusDiv.style.display = 'block';
       statusDiv.style.opacity = '1';
+      statusDiv.textContent = 'Auto-saved';
       setTimeout(() => {
         statusDiv.style.opacity = '0';
         setTimeout(() => {
@@ -1858,95 +1808,41 @@ function saveCanvasState() {
       }, 1500);
     }
   } catch (error) {
-    console.warn('Failed to save canvas state:', error);
+    console.error('Failed to save graph:', error);
   }
 }
 
-// Function to load canvas state
-function loadCanvasState() {
+// Simple load function
+function loadGraph() {
   try {
-    const savedState = localStorage.getItem(getCurrentUrlKey());
-    if (!savedState) return false;
-    
-    const state = JSON.parse(savedState);
-    
-    // Check if the saved state is for the current URL
-    if (state.url !== window.location.href) {
-      console.log('Saved state URL mismatch, clearing old state');
-      localStorage.removeItem(getCurrentUrlKey());
-      return false;
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (!saved) {
+      console.log('No saved graph found');
+      return;
     }
     
-    // Check if state is not too old (7 days)
-    const maxAge = 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds
-    if (Date.now() - state.timestamp > maxAge) {
-      console.log('Saved state too old, clearing');
-      localStorage.removeItem(getCurrentUrlKey());
-      return false;
+    const data = JSON.parse(saved);
+    if (data.url !== window.location.href) {
+      console.log('Saved graph is for different URL');
+      return;
     }
     
-    return state;
+    if (cy && data.elements) {
+      cy.elements().remove();
+      cy.add(data.elements);
+      console.log('✅ Graph loaded successfully');
+    }
   } catch (error) {
-    console.warn('Failed to load canvas state:', error);
-    return false;
+    console.error('Failed to load graph:', error);
   }
 }
 
-// Function to clear canvas state for current URL
-function clearCanvasState() {
+// Simple clear function
+function clearGraph() {
   try {
-    localStorage.removeItem(getCurrentUrlKey());
-    console.log('Canvas state cleared for:', window.location.href);
+    localStorage.removeItem(STORAGE_KEY);
+    console.log('Graph state cleared');
   } catch (error) {
-    console.warn('Failed to clear canvas state:', error);
-  }
-}
-
-// Function to apply saved canvas state
-function applyCanvasState(state) {
-  if (!window.cy || !state) return;
-  
-  try {
-    // Restore elements with their positions
-    window.cy.elements().remove();
-    window.cy.add(state.elements);
-    
-    // Restore viewport
-    window.cy.pan(state.viewport.pan);
-    window.cy.zoom(state.viewport.zoom);
-    
-    // Restore UI state
-    if (state.drawMode !== undefined) {
-      window.drawMode = state.drawMode;
-      updateDrawModeUI();
-    }
-    
-    if (state.legendExpanded !== undefined) {
-      window.legendExpanded = state.legendExpanded;
-      updateLegendUI();
-    }
-    
-    console.log('Canvas state restored successfully');
-  } catch (error) {
-    console.warn('Failed to apply canvas state:', error);
-  }
-}
-
-// Function to update draw mode UI
-function updateDrawModeUI() {
-  const drawButton = document.querySelector('.draw-mode-btn');
-  if (drawButton) {
-    drawButton.style.backgroundColor = window.drawMode ? '#ff6b6b' : '#4CAF50';
-    drawButton.textContent = window.drawMode ? 'Exit Draw' : 'Draw';
-  }
-}
-
-// Function to update legend UI
-function updateLegendUI() {
-  const legendContent = document.querySelector('.legend-content');
-  const legendToggle = document.querySelector('.legend-toggle');
-  if (legendContent && legendToggle) {
-    legendContent.style.display = window.legendExpanded ? 'block' : 'none';
-    legendToggle.innerHTML = window.legendExpanded ? '▼' : '▶';
+    console.error('Failed to clear graph:', error);
   }
 }
