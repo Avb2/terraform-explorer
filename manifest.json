@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "Terraform Resource Explorer",
+  "version": "1.0",
+  "permissions": ["activeTab"],
+  "content_scripts": [{
+    "matches": ["https://github.com/*", "https://github.dev/*"],
+    "js": ["lib/cytoscape.min.js", "content.js", "script.js"],
+    "run_at": "document_idle"
+  }],
+  "web_accessible_resources": [{
+    "resources": ["index.html"],
+    "matches": ["https://github.com/*", "https://github.dev/*"]
+  }]
+}
