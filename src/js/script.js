@@ -19,25 +19,25 @@ function getProviderDocUrl(resourceType) {
   // Handle AWS resources with pattern matching as fallback
   if (resourceType.startsWith('aws_')) {
     const resourceName = resourceType.replace('aws_', '');
-    return `https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/${resourceName}`;
+    return 'https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/' + resourceName;
   }
 
   // Handle Azure resources
   if (resourceType.startsWith('azurerm_')) {
     const resourceName = resourceType.replace('azurerm_', '');
-    return `https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/${resourceName}`;
+    return 'https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/' + resourceName;
   }
 
   // Handle Google Cloud resources
   if (resourceType.startsWith('google_')) {
     const resourceName = resourceType.replace('google_', '');
-    return `https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/${resourceName}`;
+    return 'https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/' + resourceName;
   }
 
   // Handle Kubernetes resources
   if (resourceType.startsWith('kubernetes_')) {
     const resourceName = resourceType.replace('kubernetes_', '');
-    return `https://registry.terraform.io/providers/hashicorp/kubernetes/latest/docs/resources/${resourceName}`;
+    return 'https://registry.terraform.io/providers/hashicorp/kubernetes/latest/docs/resources/' + resourceName;
   }
 
   // Handle other providers with predictable patterns
@@ -57,12 +57,12 @@ function getProviderDocUrl(resourceType) {
   for (const pattern of providerPatterns) {
     if (resourceType.startsWith(pattern.prefix)) {
       const resourceName = resourceType.replace(pattern.prefix, '');
-      return `https://registry.terraform.io/providers/hashicorp/${pattern.provider}/latest/docs/resources/${resourceName}`;
+      return 'https://registry.terraform.io/providers/hashicorp/' + pattern.provider + '/latest/docs/resources/' + resourceName;
     }
   }
 
   // Fallback to general registry search
-  return `https://registry.terraform.io/search?q=${encodeURIComponent(resourceType)}`;
+  return 'https://registry.terraform.io/search?q=' + encodeURIComponent(resourceType);
 }
 
 const providerDocs = {
@@ -231,7 +231,7 @@ function getLineNumberMapping() {
   // Create mapping from sorted array index to actual line number
   linesWithNumbers.forEach((item, sortedIndex) => {
     lineMapping.set(sortedIndex, item.lineNumber);
-    console.log(`Line mapping: sorted array index ${sortedIndex} -> line number ${item.lineNumber}, content: "${item.text.trim()}"`);
+    console.log('Line mapping: sorted array index ' + sortedIndex + ' -> line number ' + item.lineNumber + ', content: "' + item.text.trim() + '"');
   });
   
   return lineMapping;
@@ -270,7 +270,7 @@ function parseHCL(content) {
     if (line.startsWith('resource ')) {
       const m = line.match(/resource\s+"([^"]+)"\s+"([^"]+)"/);
       if (m) {
-        console.log(`Found resource ${m[1]}.${m[2]} at array index ${index}, assigned line number ${actualLineNumber}`);
+        console.log('Found resource ' + m[1] + '.' + m[2] + ' at array index ' + index + ', assigned line number ' + actualLineNumber);
         currentResource = { 
           type: m[1], 
           name: m[2], 
@@ -286,7 +286,7 @@ function parseHCL(content) {
     } else if (line.startsWith('module ')) {
       const m = line.match(/module\s+"([^"]+)"/);
       if (m) {
-        console.log(`Found module ${m[1]} at array index ${index}, assigned line number ${actualLineNumber}`);
+        console.log('Found module ' + m[1] + ' at array index ' + index + ', assigned line number ' + actualLineNumber);
         currentModule = { 
           name: m[1], 
           line: actualLineNumber, 
@@ -332,7 +332,7 @@ function parseHCL(content) {
     const req = requiredAttributes[r.type] || [];
     req.forEach(a => {
       if (!r.attributes.some(attr => attr.name === a)) {
-        issues.push(`Missing required attribute "${a}" for ${r.type}.${r.name} at line ${r.line}`);
+        issues.push('Missing required attribute "' + a + '" for ' + r.type + '.' + r.name + ' at line ' + r.line);
       }
     });
   });
@@ -364,12 +364,12 @@ function parseFromGitHubDOM(lineContainers) {
     const codeText = codeCell.textContent || '';
     const line = codeText.trim();
     
-    console.log(`Processing line ${lineNumber}: "${line}"`);
+    console.log('Processing line ' + lineNumber + ': "' + line + '"');
     
     if (line.startsWith('resource ')) {
       const m = line.match(/resource\s+"([^"]+)"\s+"([^"]+)"/);
       if (m) {
-        console.log(`Found resource ${m[1]}.${m[2]} at line ${lineNumber}`);
+        console.log('Found resource ' + m[1] + '.' + m[2] + ' at line ' + lineNumber);
         currentResource = { 
           type: m[1], 
           name: m[2], 
@@ -385,7 +385,7 @@ function parseFromGitHubDOM(lineContainers) {
     } else if (line.startsWith('module ')) {
       const m = line.match(/module\s+"([^"]+)"/);
       if (m) {
-        console.log(`Found module ${m[1]} at line ${lineNumber}`);
+        console.log('Found module ' + m[1] + ' at line ' + lineNumber);
         currentModule = { 
           name: m[1], 
           line: lineNumber, 
@@ -431,7 +431,7 @@ function parseFromGitHubDOM(lineContainers) {
     const req = requiredAttributes[r.type] || [];
     req.forEach(a => {
       if (!r.attributes.some(attr => attr.name === a)) {
-        issues.push(`Missing required attribute "${a}" for ${r.type}.${r.name} at line ${r.line}`);
+        issues.push('Missing required attribute "' + a + '" for ' + r.type + '.' + r.name + ' at line ' + r.line);
       }
     });
   });
@@ -557,6 +557,700 @@ function extractReferences(value) {
 }
 
 // --------- Dependency Analysis ----------
+function buildDependencyTree(resources, modules) {
+  const allItems = [...resources, ...modules];
+  const itemMap = new Map();
+  const dependencyMap = new Map();
+  
+  // Create maps for quick lookup
+  allItems.forEach(item => {
+    const id = item.type ? item.type + '.' + item.name : 'module.' + item.name;
+    itemMap.set(id, item);
+    
+    // Build dependency map (item -> its dependencies)
+    const deps = [...(item.depends_on || []), ...(item.references || [])];
+    dependencyMap.set(id, deps.filter(dep => itemMap.has(dep)));
+  });
+  
+  // Find root nodes (no dependencies)
+  const roots = [];
+  const visited = new Set();
+  
+  allItems.forEach(item => {
+    const id = item.type ? item.type + '.' + item.name : 'module.' + item.name;
+    const deps = dependencyMap.get(id) || [];
+    
+    if (deps.length === 0 && !visited.has(id)) {
+      const rootItem = { ...item, id, children: [], level: 0 };
+      buildChildren(id, rootItem, 0, visited, dependencyMap, itemMap);
+      roots.push(rootItem);
+    }
+  });
+  
+  // Handle remaining items (circular dependencies or complex graphs)
+  allItems.forEach(item => {
+    const id = item.type ? item.type + '.' + item.name : 'module.' + item.name;
+    if (!visited.has(id)) {
+      const orphanItem = { ...item, id, children: [], level: 0, isOrphan: true };
+      buildChildren(id, orphanItem, 0, visited, dependencyMap, itemMap);
+      roots.push(orphanItem);
+    }
+  });
+  
+  return roots;
+}
+
+function buildChildren(itemId, parentItem, level, visited, dependencyMap, itemMap) {
+  visited.add(itemId);
+  const children = [];
+  
+  // Find resources that depend on this item (these should be nested under it)
+  for (const [id, deps] of dependencyMap.entries()) {
+    if (deps.includes(itemId) && !visited.has(id)) {
+      const childItem = itemMap.get(id);
+      if (childItem) {
+        const child = { ...childItem, id, children: [], level: level + 1 };
+        buildChildren(id, child, level + 1, visited, dependencyMap, itemMap);
+        children.push(child);
+      }
+    }
+  }
+  
+  parentItem.children = children;
+}
+
+function renderDependencyTree(items, container) {
+  function renderItem(item, level = 0, parentContainer = container) {
+    const hasChildren = item.children && item.children.length > 0;
+    
+    const itemDiv = document.createElement('div');
+    itemDiv.style.cssText = `
+      padding: 8px 16px;
+      cursor: pointer;
+      font-family: monospace;
+      font-size: 13px;
+      border-bottom: 1px solid #f3f4f6;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    `;
+    
+    // Expand/collapse button
+    const expandBtn = document.createElement('button');
+    expandBtn.style.cssText = `
+      width: 16px;
+      height: 16px;
+      border: none;
+      background: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      color: #6b7280;
+      padding: 0;
+    `;
+    
+    if (hasChildren) {
+      expandBtn.textContent = '▶';
+      expandBtn.classList.add('collapsed');
+    } else {
+      expandBtn.textContent = '';
+      expandBtn.style.visibility = 'hidden';
+    }
+    
+    // Resource name
+    const nameSpan = document.createElement('span');
+    nameSpan.textContent = item.type ? `${item.type}.${item.name}` : `module.${item.name}`;
+    nameSpan.style.cssText = 'flex: 1;';
+    
+    // Store dependency info for highlighting
+    itemDiv._itemData = item;
+    itemDiv.setAttribute('data-item-id', item.id);
+    
+    itemDiv.appendChild(expandBtn);
+    itemDiv.appendChild(nameSpan);
+    
+    // Hover effects
+    itemDiv.addEventListener('mouseenter', () => {
+      itemDiv.style.background = '#f8fafc';
+    });
+    
+    itemDiv.addEventListener('mouseleave', () => {
+      itemDiv.style.background = 'transparent';
+    });
+    
+    // Click handler for resource details
+    nameSpan.addEventListener('click', (e) => {
+      e.stopPropagation();
+      
+      // Clear previous highlights
+      clearHighlights();
+      
+      // Highlight dependent resources
+      highlightDependents(item, container);
+      
+      // Show details popup
+      if (item.type) {
+        showResourceDetails(item);
+      } else {
+        showModuleDetails(item);
+      }
+    });
+    
+    // Expand/collapse handler
+    expandBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      
+      const childrenContainer = itemDiv.nextElementSibling;
+      
+      if (expandBtn.classList.contains('collapsed')) {
+        // Expand
+        expandBtn.textContent = '▼';
+        expandBtn.classList.remove('collapsed');
+        childrenContainer.style.display = 'block';
+      } else {
+        // Collapse
+        expandBtn.textContent = '▶';
+        expandBtn.classList.add('collapsed');
+        childrenContainer.style.display = 'none';
+      }
+    });
+    
+    parentContainer.appendChild(itemDiv);
+    
+    // Create children container
+    if (hasChildren) {
+      const childrenContainer = document.createElement('div');
+      childrenContainer.style.cssText = `
+        display: none;
+        margin-left: 24px;
+        border-left: 1px solid #e5e7eb;
+        padding-left: 8px;
+      `;
+      
+      // Render children
+      item.children.forEach(child => {
+        renderItem(child, level + 1, childrenContainer);
+      });
+      
+      parentContainer.appendChild(childrenContainer);
+    }
+  }
+  
+  items.forEach(item => {
+    renderItem(item);
+  });
+}
+
+function clearHighlights() {
+  const highlighted = document.querySelectorAll('.dependency-highlight');
+  highlighted.forEach(el => {
+    el.classList.remove('dependency-highlight');
+    el.style.background = '';
+    el.style.borderLeft = '';
+  });
+}
+
+function highlightDependents(selectedItem, container) {
+  const itemId = selectedItem.id;
+  const allItems = container.querySelectorAll('[data-item-id]');
+  
+  allItems.forEach(itemEl => {
+    const itemData = itemEl._itemData;
+    if (!itemData) return;
+    
+    const deps = [...(itemData.depends_on || []), ...(itemData.references || [])];
+    
+    // Check if this item depends on the selected item
+    if (deps.includes(itemId)) {
+      itemEl.classList.add('dependency-highlight');
+      itemEl.style.background = '#fef2f2';
+      itemEl.style.borderLeft = '3px solid #ef4444';
+    }
+  });
+}
+
+function buildRelationshipTree(resources, modules) {
+  const allItems = [...resources, ...modules];
+  const itemMap = new Map();
+  const dependencyMap = new Map();
+  const reverseDependencyMap = new Map();
+  
+  // Create maps for quick lookup
+  allItems.forEach(item => {
+    const id = item.type ? item.type + '.' + item.name : 'module.' + item.name;
+    itemMap.set(id, item);
+    
+    // Build dependency map (item -> its dependencies)
+    const deps = [...(item.depends_on || []), ...(item.references || [])];
+    dependencyMap.set(id, deps.filter(dep => itemMap.has(dep)));
+    
+    // Build reverse dependency map (item -> what depends on it)
+    reverseDependencyMap.set(id, []);
+  });
+  
+  // Build reverse dependencies
+  allItems.forEach(item => {
+    const id = item.type ? item.type + '.' + item.name : 'module.' + item.name;
+    const deps = dependencyMap.get(id) || [];
+    deps.forEach(dep => {
+      if (reverseDependencyMap.has(dep)) {
+        reverseDependencyMap.get(dep).push(id);
+      }
+    });
+  });
+  
+  // Find root nodes (no dependencies)
+  const roots = [];
+  const visited = new Set();
+  
+  allItems.forEach(item => {
+    const id = item.type ? item.type + '.' + item.name : 'module.' + item.name;
+    const deps = dependencyMap.get(id) || [];
+    
+    if (deps.length === 0) {
+      const rootItem = { ...item, id, children: [], level: 0 };
+      buildDependencyChain(id, rootItem, 0, visited, dependencyMap, reverseDependencyMap, itemMap);
+      roots.push(rootItem);
+    }
+  });
+  
+  // Find dependency chains (resources with clear parent-child relationships)
+  const dependencyChains = [];
+  const processed = new Set();
+  
+  allItems.forEach(item => {
+    const id = item.type ? item.type + '.' + item.name : 'module.' + item.name;
+    if (!visited.has(id) && !processed.has(id)) {
+      const chainItem = { ...item, id, children: [], level: 0 };
+      buildDependencyChain(id, chainItem, 0, processed, dependencyMap, reverseDependencyMap, itemMap);
+      if (chainItem.children.length > 0 || dependencyMap.get(id)?.length > 0) {
+        dependencyChains.push(chainItem);
+      }
+    }
+  });
+  
+  // Find circular dependencies
+  const circularDeps = [];
+  allItems.forEach(item => {
+    const id = item.type ? item.type + '.' + item.name : 'module.' + item.name;
+    if (!visited.has(id) && !processed.has(id)) {
+      const circularItem = { ...item, id, children: [], level: 0, isCircular: true };
+      circularDeps.push(circularItem);
+    }
+  });
+  
+  // Find orphans (no relationships at all)
+  const orphans = [];
+  allItems.forEach(item => {
+    const id = item.type ? item.type + '.' + item.name : 'module.' + item.name;
+    const deps = dependencyMap.get(id) || [];
+    const dependents = reverseDependencyMap.get(id) || [];
+    
+    if (deps.length === 0 && dependents.length === 0) {
+      orphans.push({ ...item, id, children: [], level: 0 });
+    }
+  });
+  
+  return {
+    roots,
+    dependencyChains,
+    circularDeps,
+    orphans
+  };
+}
+
+function buildDependencyChain(itemId, parentItem, level, visited, dependencyMap, reverseDependencyMap, itemMap) {
+  visited.add(itemId);
+  const children = [];
+  
+  // Find direct dependents (resources that depend on this item)
+  const dependents = reverseDependencyMap.get(itemId) || [];
+  dependents.forEach(depId => {
+    if (!visited.has(depId)) {
+      const childItem = itemMap.get(depId);
+      if (childItem) {
+        const child = { ...childItem, id: depId, children: [], level: level + 1 };
+        buildDependencyChain(depId, child, level + 1, visited, dependencyMap, reverseDependencyMap, itemMap);
+        children.push(child);
+      }
+    }
+  });
+  
+  parentItem.children = children;
+}
+
+function createRelationshipSection(title, items, description) {
+  const section = document.createElement('div');
+  section.className = 'relationship-section';
+  section.style.cssText = `
+    margin-bottom: 24px;
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  `;
+
+  // Section header
+  const header = document.createElement('div');
+  header.style.cssText = `
+    padding: 20px;
+    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+    border-bottom: 1px solid #e2e8f0;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  `;
+
+  const headerContent = document.createElement('div');
+  headerContent.style.cssText = `
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  `;
+
+  const icon = document.createElement('div');
+  icon.style.cssText = `
+    width: 48px;
+    height: 48px;
+    background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 24px;
+    flex-shrink: 0;
+  `;
+  // Set icon based on section type
+  if (title.includes('Foundation')) {
+    icon.textContent = '●';
+  } else if (title.includes('Dependency Chains')) {
+    icon.textContent = '→';
+  } else if (title.includes('Circular')) {
+    icon.textContent = '↻';
+  } else if (title.includes('Independent')) {
+    icon.textContent = '○';
+  } else {
+    icon.textContent = '■';
+  }
+
+  const titleDiv = document.createElement('div');
+  titleDiv.style.cssText = `
+    flex: 1;
+  `;
+
+  const titleText = document.createElement('div');
+  titleText.style.cssText = `
+    font-weight: 700;
+    color: #1e293b;
+    font-size: 18px;
+    margin-bottom: 4px;
+  `;
+  titleText.textContent = title;
+
+  const descText = document.createElement('div');
+  descText.style.cssText = `
+    color: #64748b;
+    font-size: 14px;
+    line-height: 1.4;
+  `;
+  descText.textContent = description;
+
+  const countText = document.createElement('div');
+  countText.style.cssText = `
+    color: #3b82f6;
+    font-size: 14px;
+    font-weight: 600;
+    background: #dbeafe;
+    padding: 4px 12px;
+    border-radius: 20px;
+  `;
+  countText.textContent = `${items.length} resource${items.length !== 1 ? 's' : ''}`;
+
+  titleDiv.appendChild(titleText);
+  titleDiv.appendChild(descText);
+
+  headerContent.appendChild(icon);
+  headerContent.appendChild(titleDiv);
+  headerContent.appendChild(countText);
+
+  const expandIcon = document.createElement('div');
+  expandIcon.style.cssText = `
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #64748b;
+    font-size: 16px;
+    transition: transform 0.2s ease;
+    margin-left: 16px;
+  `;
+  expandIcon.textContent = '▼';
+
+  header.appendChild(headerContent);
+  header.appendChild(expandIcon);
+
+  // Content area
+  const content = document.createElement('div');
+  content.className = 'relationship-content';
+  content.style.cssText = `
+    display: block;
+    padding: 0;
+  `;
+
+  // Render relationship tree recursively
+  function renderRelationshipItem(item, level = 0) {
+    const itemDiv = document.createElement('div');
+    itemDiv.style.cssText = `
+      padding: 12px 20px 12px ${20 + level * 24}px;
+      border-bottom: 1px solid #f1f5f9;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      position: relative;
+      background: ${level % 2 === 0 ? '#ffffff' : '#f8fafc'};
+    `;
+
+    // Add visual hierarchy indicators
+    if (level > 0) {
+      // Vertical line
+      const vLine = document.createElement('div');
+      vLine.style.cssText = `
+        position: absolute;
+        left: ${20 + (level - 1) * 24 + 8}px;
+        top: 0;
+        bottom: 0;
+        width: 2px;
+        background: #e2e8f0;
+      `;
+      itemDiv.appendChild(vLine);
+      
+      // Horizontal line
+      const hLine = document.createElement('div');
+      hLine.style.cssText = `
+        position: absolute;
+        left: ${20 + (level - 1) * 24 + 8}px;
+        top: 50%;
+        width: 12px;
+        height: 2px;
+        background: #e2e8f0;
+      `;
+      itemDiv.appendChild(hLine);
+    }
+
+    // Resource icon with relationship indicator
+    const itemIcon = document.createElement('div');
+    itemIcon.style.cssText = `
+      width: 36px;
+      height: 36px;
+      background: ${getRelationshipColor(item, level)};
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 16px;
+      font-weight: bold;
+      flex-shrink: 0;
+      position: relative;
+    `;
+    itemIcon.textContent = getResourceIcon(item.type);
+
+    // Add relationship indicator
+    if (item.children && item.children.length > 0) {
+      const indicator = document.createElement('div');
+      indicator.style.cssText = `
+        position: absolute;
+        top: -4px;
+        right: -4px;
+        width: 16px;
+        height: 16px;
+        background: #10b981;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-size: 10px;
+        font-weight: bold;
+      `;
+      indicator.textContent = item.children.length;
+      itemIcon.appendChild(indicator);
+    }
+
+    // Resource info
+    const infoDiv = document.createElement('div');
+    infoDiv.style.cssText = `
+      flex: 1;
+      min-width: 0;
+    `;
+
+    const nameDiv = document.createElement('div');
+    nameDiv.style.cssText = `
+      font-family: 'SF Mono', 'Monaco', 'Cascadia Code', monospace;
+      font-size: 15px;
+      color: #1e293b;
+      font-weight: 600;
+      margin-bottom: 4px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    `;
+    nameDiv.textContent = item.type ? `${item.type}.${item.name}` : `module.${item.name}`;
+
+    const detailsDiv = document.createElement('div');
+    detailsDiv.style.cssText = `
+      display: flex;
+      gap: 16px;
+      font-size: 12px;
+      color: #64748b;
+      flex-wrap: wrap;
+    `;
+
+    // Level indicator
+    if (level > 0) {
+      const levelSpan = document.createElement('span');
+      levelSpan.style.cssText = 'color: #8b5cf6; font-weight: 500;';
+      levelSpan.textContent = `Level ${level}`;
+      detailsDiv.appendChild(levelSpan);
+    }
+
+    // Line number
+    if (item.line) {
+      const lineSpan = document.createElement('span');
+      lineSpan.textContent = `Line ${item.line}`;
+      detailsDiv.appendChild(lineSpan);
+    }
+
+    // Dependencies count
+    if (item.depends_on && item.depends_on.length > 0) {
+      const depsSpan = document.createElement('span');
+      depsSpan.style.cssText = 'color: #f59e0b; font-weight: 500;';
+      depsSpan.textContent = `← ${item.depends_on.length} deps`;
+      detailsDiv.appendChild(depsSpan);
+    }
+
+    // Dependents count
+    if (item.children && item.children.length > 0) {
+      const dependentsSpan = document.createElement('span');
+      dependentsSpan.style.cssText = 'color: #10b981; font-weight: 500;';
+      dependentsSpan.textContent = `→ ${item.children.length} dependents`;
+      detailsDiv.appendChild(dependentsSpan);
+    }
+
+    // References count
+    if (item.references && item.references.length > 0) {
+      const refsSpan = document.createElement('span');
+      refsSpan.style.cssText = 'color: #8b5cf6; font-weight: 500;';
+      refsSpan.textContent = `${item.references.length} refs`;
+      detailsDiv.appendChild(refsSpan);
+    }
+
+    // Circular dependency indicator
+    if (item.isCircular) {
+      const circularSpan = document.createElement('span');
+      circularSpan.style.cssText = 'color: #ef4444; font-weight: 500; background: #fef2f2; padding: 2px 6px; border-radius: 4px;';
+      circularSpan.textContent = 'Circular';
+      detailsDiv.appendChild(circularSpan);
+    }
+
+    infoDiv.appendChild(nameDiv);
+    infoDiv.appendChild(detailsDiv);
+
+    itemDiv.appendChild(itemIcon);
+    itemDiv.appendChild(infoDiv);
+
+    // Hover effects
+    itemDiv.addEventListener('mouseenter', () => {
+      itemDiv.style.background = '#f0f9ff';
+      itemDiv.style.borderLeft = '4px solid #3b82f6';
+    });
+    itemDiv.addEventListener('mouseleave', () => {
+      itemDiv.style.background = level % 2 === 0 ? '#ffffff' : '#f8fafc';
+      itemDiv.style.borderLeft = '4px solid transparent';
+    });
+
+    // Click handler
+    itemDiv.addEventListener('click', () => {
+      if (item.type) {
+        showResourceDetails(item);
+      } else {
+        showModuleDetails(item);
+      }
+    });
+
+    content.appendChild(itemDiv);
+
+    // Render children recursively
+    if (item.children && item.children.length > 0) {
+      item.children.forEach(child => {
+        renderRelationshipItem(child, level + 1);
+      });
+    }
+  }
+
+  // Render all items
+  items.forEach(item => {
+    renderRelationshipItem(item);
+  });
+
+  section.appendChild(header);
+  section.appendChild(content);
+
+  // Toggle functionality
+  header.addEventListener('click', () => {
+    const isExpanded = content.style.display === 'block';
+    content.style.display = isExpanded ? 'none' : 'block';
+    expandIcon.style.transform = isExpanded ? 'rotate(0deg)' : 'rotate(-90deg)';
+  });
+
+  return section;
+}
+
+function getRelationshipColor(item, level) {
+  if (item.isCircular) return '#ef4444'; // Red for circular dependencies
+  
+  if (level === 0) return '#10b981'; // Green for root/foundation resources
+  if (level === 1) return '#3b82f6'; // Blue for first-level dependencies
+  if (level === 2) return '#8b5cf6'; // Purple for second-level dependencies
+  if (level >= 3) return '#f59e0b'; // Amber for deeper levels
+  
+  return '#6b7280'; // Gray for others
+}
+
+function getResourceColor(type) {
+  if (!type) return '#f97316'; // Orange for modules
+  
+  const t = type.toLowerCase();
+  if (t.includes('vpc') || t.includes('subnet') || t.includes('route')) return '#3b82f6'; // Blue
+  if (t.includes('instance') || t.includes('lambda') || t.includes('ecs')) return '#10b981'; // Green
+  if (t.includes('s3') || t.includes('ebs') || t.includes('efs')) return '#f59e0b'; // Amber
+  if (t.includes('iam') || t.includes('security') || t.includes('kms')) return '#ef4444'; // Red
+  if (t.includes('rds') || t.includes('dynamodb') || t.includes('database')) return '#8b5cf6'; // Purple
+  if (t.includes('cloudwatch') || t.includes('sns') || t.includes('sqs')) return '#06b6d4'; // Cyan
+  return '#6b7280'; // Gray
+}
+
+function getResourceIcon(type) {
+  if (!type) return 'M';
+  
+  const t = type.toLowerCase();
+  if (t.includes('vpc') || t.includes('subnet')) return 'N';
+  if (t.includes('instance') || t.includes('ec2')) return 'C';
+  if (t.includes('lambda') || t.includes('function')) return 'L';
+  if (t.includes('s3') || t.includes('bucket')) return 'S';
+  if (t.includes('rds') || t.includes('database')) return 'D';
+  if (t.includes('iam') || t.includes('role')) return 'I';
+  if (t.includes('cloudwatch') || t.includes('monitoring')) return 'M';
+  if (t.includes('security') || t.includes('kms')) return 'K';
+  return 'R';
+}
+
 function buildDependencyGraph(resources, modules) {
   const elements = [];
   const dependencyMap = new Map();
@@ -564,11 +1258,11 @@ function buildDependencyGraph(resources, modules) {
   
   // Create nodes
   resources.forEach(res => {
-    const nodeId = `${res.type}.${res.name}`;
+    const nodeId = res.type + '.' + res.name;
     elements.push({ 
       data: { 
         id: nodeId, 
-        label: `${res.type}\n${res.name}`, 
+        label: res.type + '\n' + res.name, 
         type: 'resource', 
         resourceType: res.type,
         depends_on: res.depends_on,
@@ -579,11 +1273,11 @@ function buildDependencyGraph(resources, modules) {
   });
   
   modules.forEach(mod => {
-    const nodeId = `module.${mod.name}`;
+    const nodeId = 'module.' + mod.name;
     elements.push({ 
       data: { 
         id: nodeId, 
-        label: `module\n${mod.name}`, 
+        label: 'module\n' + mod.name, 
         type: 'module',
         depends_on: mod.depends_on,
         references: mod.references
@@ -595,14 +1289,14 @@ function buildDependencyGraph(resources, modules) {
   // Create edges for dependencies
   const allItems = [...resources, ...modules];
   allItems.forEach(item => {
-    const sourceId = item.type ? `${item.type}.${item.name}` : `module.${item.name}`;
+    const sourceId = item.type ? item.type + '.' + item.name : 'module.' + item.name;
     
     // Add explicit dependencies (depends_on)
     (item.depends_on || []).forEach(dep => {
       if (dependencyMap.has(dep)) {
         elements.push({
           data: {
-            id: `edge-${sourceId}-${dep}`,
+            id: 'edge-' + sourceId + '-' + dep,
             source: dep,
             target: sourceId,
             relationshipType: 'explicit',
@@ -617,7 +1311,7 @@ function buildDependencyGraph(resources, modules) {
       if (dependencyMap.has(ref)) {
         elements.push({
           data: {
-            id: `edge-${sourceId}-${ref}`,
+            id: 'edge-' + sourceId + '-' + ref,
             source: ref,
             target: sourceId,
             relationshipType: 'implicit',
@@ -868,7 +1562,9 @@ function highlightImpactChain(selectedNodeId, impactedResources, cy) {
   });
 }
 
+// No toolbar needed for clean tree view
 function createGraphControls(container) {
+  return null; // Disabled for clean tree view
   // Create unified toolbar at bottom
   const toolbarDiv = document.createElement('div');
   toolbarDiv.setAttribute('data-graph-toolbar', 'true');
@@ -997,21 +1693,22 @@ function createGraphControls(container) {
   legendControlsDiv.appendChild(zoomInBtn);
   legendControlsDiv.appendChild(zoomOutBtn);
 
-  // Create legend at bottom
+  // Create professional legend
   const legendDiv = document.createElement('div');
   legendDiv.setAttribute('data-graph-legend', 'true');
   legendDiv.style.cssText = `
     position: absolute;
     bottom: 60px;
     left: 10px;
-    background: rgba(255, 255, 255, 0.95);
-    border: 1px solid #ddd;
-    border-radius: 8px;
-    padding: 12px;
+    background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 16px;
     font-size: 11px;
     z-index: 1000;
-    min-width: 140px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    min-width: 160px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+    backdrop-filter: blur(10px);
     transition: all 0.3s ease;
   `;
   
@@ -1019,37 +1716,37 @@ function createGraphControls(container) {
   const legendContent = document.createElement('div');
   legendContent.id = 'legend-content';
   legendContent.innerHTML = `
-    <div style="display: flex; align-items: center; margin: 2px 0;">
-      <div style="width: 12px; height: 12px; background: #4CAF50; border: 1px solid #2E7D32; margin-right: 6px;"></div>
-      Resources
+    <div style="display: flex; align-items: center; margin: 4px 0; padding: 4px 0;">
+      <div style="width: 14px; height: 14px; background: #f8fafc; border: 2px solid #3b82f6; border-radius: 4px; margin-right: 8px; box-shadow: 0 1px 3px rgba(59, 130, 246, 0.2);"></div>
+      <span style="font-weight: 600; color: #1e40af; font-size: 11px;">Resources</span>
     </div>
-    <div style="display: flex; align-items: center; margin: 2px 0;">
-      <div style="width: 12px; height: 12px; background: #FF9800; border: 1px solid #E65100; transform: rotate(45deg); margin-right: 6px;"></div>
-      Modules
+    <div style="display: flex; align-items: center; margin: 4px 0; padding: 4px 0;">
+      <div style="width: 14px; height: 14px; background: #fff7ed; border: 2px solid #f97316; transform: rotate(45deg); margin-right: 8px; box-shadow: 0 1px 3px rgba(249, 115, 22, 0.2);"></div>
+      <span style="font-weight: 600; color: #c2410c; font-size: 11px;">Modules</span>
     </div>
-    <div style="margin-top: 8px; border-top: 1px solid #ddd; padding-top: 4px;">
-      <div style="font-size: 10px; margin-bottom: 2px;"><strong>Dependencies:</strong></div>
-      <div style="display: flex; align-items: center; margin: 1px 0;">
-        <div style="width: 16px; height: 3px; background: #FF5722; margin-right: 6px;"></div>
-        <span style="font-size: 10px;">Explicit (depends_on)</span>
+    <div style="margin-top: 12px; border-top: 1px solid #e2e8f0; padding-top: 8px;">
+      <div style="font-size: 10px; margin-bottom: 6px; font-weight: 600; color: #475569; text-transform: uppercase; letter-spacing: 0.5px;">Dependencies</div>
+      <div style="display: flex; align-items: center; margin: 3px 0; padding: 2px 0;">
+        <div style="width: 18px; height: 3px; background: #dc2626; border-radius: 2px; margin-right: 8px; box-shadow: 0 1px 2px rgba(220, 38, 38, 0.3);"></div>
+        <span style="font-size: 10px; color: #64748b; font-weight: 500;">Explicit (depends_on)</span>
       </div>
-      <div style="display: flex; align-items: center; margin: 1px 0;">
-        <div style="width: 16px; height: 2px; background: #9C27B0; border-top: 1px dashed #9C27B0; margin-right: 6px;"></div>
-        <span style="font-size: 10px;">Implicit (references)</span>
+      <div style="display: flex; align-items: center; margin: 3px 0; padding: 2px 0;">
+        <div style="width: 18px; height: 2px; background: #7c3aed; border-top: 2px dashed #7c3aed; border-radius: 2px; margin-right: 8px; box-shadow: 0 1px 2px rgba(124, 58, 237, 0.3);"></div>
+        <span style="font-size: 10px; color: #64748b; font-weight: 500;">Implicit (references)</span>
       </div>
-      <div style="display: flex; align-items: center; margin: 1px 0;">
-        <div style="width: 16px; height: 2px; background: #9C27B0; margin-right: 6px;"></div>
-        <span style="font-size: 10px;">User Drawn</span>
+      <div style="display: flex; align-items: center; margin: 3px 0; padding: 2px 0;">
+        <div style="width: 18px; height: 3px; background: #059669; border-radius: 2px; margin-right: 8px; box-shadow: 0 1px 2px rgba(5, 150, 105, 0.3);"></div>
+        <span style="font-size: 10px; color: #64748b; font-weight: 500;">User Drawn</span>
       </div>
     </div>
-    <div id="draw-status" style="margin-top: 8px; border-top: 1px solid #ddd; padding-top: 4px; font-size: 10px; color: #666;">
-      <span id="draw-status-text">Draw mode: Inactive</span>
+    <div id="draw-status" style="margin-top: 12px; border-top: 1px solid #e2e8f0; padding-top: 8px; font-size: 10px; color: #64748b;">
+      <span id="draw-status-text" style="font-weight: 500;">Draw mode: Inactive</span>
     </div>
-    <div style="margin-top: 8px; border-top: 1px solid #ddd; padding-top: 4px; font-size: 10px; color: #666;">
-      <div style="font-weight: bold; margin-bottom: 2px;">Layout:</div>
-      <div style="margin: 1px 0;">Tree: Hierarchical by dependencies</div>
-      <div style="margin: 1px 0;">Force: Dynamic force-directed</div>
-      <div style="margin: 1px 0;">Grid: Organized grid layout</div>
+    <div style="margin-top: 12px; border-top: 1px solid #e2e8f0; padding-top: 8px; font-size: 10px; color: #64748b;">
+      <div style="font-weight: 600; margin-bottom: 6px; color: #475569; text-transform: uppercase; letter-spacing: 0.5px;">Layouts</div>
+      <div style="margin: 2px 0; font-weight: 500;">Tree: Hierarchical structure</div>
+      <div style="margin: 2px 0; font-weight: 500;">Force: Dynamic positioning</div>
+      <div style="margin: 2px 0; font-weight: 500;">Grid: Organized alignment</div>
     </div>
   `;
   
@@ -1754,7 +2451,10 @@ function showNodeDetails(node) {
     // Find the resource in the parsed data
     const content = collectCodeText();
     const { resources } = parseHCL(content);
-    const resource = resources.find(r => `${r.type}.${r.name}` === nodeId);
+    const resource = resources.find(r => r.type + '.' + r.name === nodeId);
+    
+    // Find all instances of the same resource type
+    const allInstancesOfType = resources.filter(r => r.type === resourceType);
     
     if (resource) {
       const docLink = getProviderDocUrl(resource.type);
@@ -1794,7 +2494,7 @@ function showNodeDetails(node) {
                  <div style="margin-bottom: 16px; padding: 12px; background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 6px;">
            <strong style="color: #000;">Missing Required Attributes:</strong>
            <div style="margin-top: 8px;">
-             ${missingAttrs.map(attr => `<div style="margin: 2px 0; color: #000;">• ${attr}</div>`).join('')}
+             ${missingAttrs.map(attr => '<div style="margin: 2px 0; color: #000;">• ' + attr + '</div>').join('')}
            </div>
          </div>
         ` : ''}
@@ -1822,6 +2522,43 @@ function showNodeDetails(node) {
             </div>
           `).join('')}
         </div>
+        ${resource.depends_on && resource.depends_on.length > 0 ? `
+          <div style="margin-bottom: 16px;">
+            <strong style="color: #000; margin-bottom: 8px; display: block;">Dependencies (${resource.depends_on.length}):</strong>
+            <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+              ${resource.depends_on.map(dep => `
+                <span style="background: #fef3c7; color: #92400e; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-family: 'Courier New', monospace;">${dep}</span>
+              `).join('')}
+            </div>
+          </div>
+        ` : ''}
+        ${resource.references && resource.references.length > 0 ? `
+          <div style="margin-bottom: 16px;">
+            <strong style="color: #000; margin-bottom: 8px; display: block;">References (${resource.references.length}):</strong>
+            <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+              ${resource.references.map(ref => `
+                <span style="background: #e0e7ff; color: #3730a3; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-family: 'Courier New', monospace;">${ref}</span>
+              `).join('')}
+            </div>
+          </div>
+        ` : ''}
+        ${allInstancesOfType.length > 1 ? `
+          <div style="margin-bottom: 16px;">
+            <strong style="color: #000; margin-bottom: 8px; display: block;">All Instances of ${resourceType} (${allInstancesOfType.length}):</strong>
+            <div style="max-height: 200px; overflow-y: auto; border: 1px solid #e5e7eb; border-radius: 6px; padding: 8px;">
+              ${allInstancesOfType.map(instance => `
+                <div style="padding: 8px 12px; margin: 4px 0; background: ${instance.name === resource.name ? '#f0f9ff' : '#f8f9fa'}; border-radius: 4px; border-left: 3px solid ${instance.name === resource.name ? '#3b82f6' : '#d1d5db'};">
+                  <div style="font-weight: 600; color: #000; font-family: 'Courier New', monospace; font-size: 12px;">${instance.name}</div>
+                  <div style="color: #6b7280; font-size: 11px; margin-top: 2px;">
+                    Line ${instance.line || 'Unknown'} • ${instance.attributes.length} attributes
+                    ${instance.depends_on && instance.depends_on.length > 0 ? ` • ${instance.depends_on.length} deps` : ''}
+                    ${instance.references && instance.references.length > 0 ? ` • ${instance.references.length} refs` : ''}
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        ` : ''}
                   <div style="margin-top: 16px; border-top: 1px solid #ddd; padding-top: 12px;">
             <div style="margin-bottom: 8px;">
               <strong style="color: #000; font-size: 12px;">Resource ID:</strong>
@@ -1861,6 +2598,26 @@ function showNodeDetails(node) {
         <div style="margin-bottom: 6px;">
           <strong>Source:</strong> ${module.source || 'Not specified'}
         </div>
+        ${module.depends_on && module.depends_on.length > 0 ? `
+          <div style="margin-bottom: 16px;">
+            <strong style="color: #000; margin-bottom: 8px; display: block;">Dependencies (${module.depends_on.length}):</strong>
+            <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+              ${module.depends_on.map(dep => `
+                <span style="background: #fef3c7; color: #92400e; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-family: 'Courier New', monospace;">${dep}</span>
+              `).join('')}
+            </div>
+          </div>
+        ` : ''}
+        ${module.references && module.references.length > 0 ? `
+          <div style="margin-bottom: 16px;">
+            <strong style="color: #000; margin-bottom: 8px; display: block;">References (${module.references.length}):</strong>
+            <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+              ${module.references.map(ref => `
+                <span style="background: #e0e7ff; color: #3730a3; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-family: 'Courier New', monospace;">${ref}</span>
+              `).join('')}
+            </div>
+          </div>
+        ` : ''}
       `;
     } else {
       detailsContent.innerHTML = `
@@ -1875,511 +2632,1592 @@ function showNodeDetails(node) {
   detailsDiv.style.display = 'block';
 }
 
-function initGraph(elements) {
+function initCleanTreeView(resources, modules) {
   const container = document.getElementById('tf-graph');
   if (!container || !container.isConnected) return;
 
-  // Don't skip if hidden - we want to initialize the graph even when sidebar is closed
-  // The graph will be ready when the sidebar opens
+  // Clear existing content
+  container.innerHTML = '';
+  
+  // Create clean tree container
+  const treeContainer = document.createElement('div');
+  treeContainer.id = 'tf-clean-tree';
+  treeContainer.style.cssText = `
+    height: 100%;
+    background: #ffffff;
+    border: none;
+    border-radius: 0;
+    margin: 0;
+    position: relative;
+    box-shadow: none;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+  `;
 
-  ensureCytoscape(() => {
-    // Only create new graph if it doesn't exist or if elements have changed
-    const currentElements = cy ? cy.elements().map(el => el.data('id')).sort() : [];
-    const newElements = elements.map(el => el.data.id).sort();
-    const elementsChanged = JSON.stringify(currentElements) !== JSON.stringify(newElements);
+  // Create header with search
+  const header = document.createElement('div');
+  header.style.cssText = `
+    padding: 16px;
+    border-bottom: 1px solid #e2e8f0;
+    background: #f8fafc;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  `;
+
+  // Search input with enhanced UX
+  const searchContainer = document.createElement('div');
+  searchContainer.style.cssText = `
+    flex: 1;
+    position: relative;
+    display: flex;
+    align-items: center;
+  `;
+
+  const searchInput = document.createElement('input');
+  searchInput.type = 'text';
+  searchInput.placeholder = 'Search resources and modules... (Ctrl+F)';
+  searchInput.setAttribute('aria-label', 'Search resources and modules');
+  searchInput.setAttribute('role', 'searchbox');
+  searchInput.style.cssText = `
+    flex: 1;
+    padding: 8px 12px 8px 40px;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    font-size: 14px;
+    background: white;
+    font-family: inherit;
+    transition: all 0.2s ease;
+    outline: none;
+  `;
+  
+  // Search icon
+  const searchIcon = document.createElement('div');
+  searchIcon.style.cssText = `
+    position: absolute;
+    left: 12px;
+    color: #6b7280;
+    font-size: 16px;
+    pointer-events: none;
+    z-index: 1;
+  `;
+  searchIcon.innerHTML = '🔍';
+  
+  // Clear search button
+  const clearButton = document.createElement('button');
+  clearButton.innerHTML = '✕';
+  clearButton.setAttribute('aria-label', 'Clear search');
+  clearButton.style.cssText = `
+    position: absolute;
+    right: 8px;
+    background: none;
+    border: none;
+    color: #6b7280;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+    font-size: 12px;
+    display: none;
+    transition: all 0.2s ease;
+  `;
+  clearButton.addEventListener('mouseenter', () => {
+    clearButton.style.background = '#f3f4f6';
+    clearButton.style.color = '#374151';
+  });
+  clearButton.addEventListener('mouseleave', () => {
+    clearButton.style.background = 'none';
+    clearButton.style.color = '#6b7280';
+  });
+  clearButton.addEventListener('click', () => {
+    searchInput.value = '';
+    searchInput.focus();
+    filterCleanTree('', treeRoot);
+    clearButton.style.display = 'none';
+  });
+
+  searchInput.addEventListener('focus', () => {
+    searchInput.style.borderColor = '#3b82f6';
+    searchInput.style.boxShadow = '0 0 0 3px rgba(59, 130, 246, 0.1)';
+  });
+  searchInput.addEventListener('blur', () => {
+    searchInput.style.borderColor = '#d1d5db';
+    searchInput.style.boxShadow = 'none';
+  });
+  searchInput.addEventListener('input', (e) => {
+    const hasValue = e.target.value.length > 0;
+    clearButton.style.display = hasValue ? 'block' : 'none';
+  });
+
+  searchContainer.appendChild(searchIcon);
+  searchContainer.appendChild(searchInput);
+  searchContainer.appendChild(clearButton);
+
+  // Stats display
+  const statsDiv = document.createElement('div');
+  statsDiv.style.cssText = `
+    color: #6b7280;
+    font-size: 12px;
+    white-space: nowrap;
+  `;
+  statsDiv.textContent = resources.length + ' resources, ' + modules.length + ' modules';
+
+  header.appendChild(searchContainer);
+  header.appendChild(statsDiv);
+
+  // Create scrollable tree area
+  const treeArea = document.createElement('div');
+  treeArea.style.cssText = `
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    background: #ffffff;
+  `;
+
+  // Build the clean tree structure
+  const treeRoot = document.createElement('div');
+  treeRoot.id = 'clean-tree-root';
+  treeRoot.style.cssText = `
+    padding: 0;
+    margin: 0;
+  `;
+
+  // Show loading state if no resources
+  if (resources.length === 0 && modules.length === 0) {
+    const emptyState = document.createElement('div');
+    emptyState.style.cssText = `
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 60px 20px;
+      text-align: center;
+      color: #6b7280;
+    `;
+    emptyState.innerHTML = `
+      <div style="font-size: 48px; margin-bottom: 16px;">🌱</div>
+      <div style="font-size: 18px; font-weight: 600; margin-bottom: 8px; color: #374151;">No Terraform resources found</div>
+      <div style="font-size: 14px;">Make sure you're on a page with Terraform files (.tf) or GitHub repository with Terraform code</div>
+    `;
+    treeRoot.appendChild(emptyState);
+  } else {
+    // Build dependency tree
+    const dependencyTree = buildDependencyTree(resources, modules);
     
-    if (!cy || elementsChanged) {
-      // Clean up existing graph and controls
-      if (cy) {
-        cy.destroy();
-        cy = null;
-      }
-      
-      // Remove existing controls and legend
-      const existingControls = container.querySelector('[data-graph-controls]');
-      const existingLegend = container.querySelector('[data-graph-legend]');
-      const existingDetails = document.querySelector('[data-graph-details]');
-      if (existingControls) existingControls.remove();
-      if (existingLegend) existingLegend.remove();
-      if (existingDetails) existingDetails.remove();
-      
-      // Create new graph
-      // Enhanced styling for better UX
-      const style = [
-        // Node styles
-        {
-          selector: 'node',
-          style: {
-            'background-color': '#4CAF50',
-            'background-opacity': 0.8,
-            'border-color': '#2E7D32',
-            'border-width': 2,
-            'border-opacity': 0.8,
-            'color': '#fff',
-            'text-valign': 'center',
-            'text-halign': 'center',
-            'font-size': '12px',
-            'font-weight': 'bold',
-            'text-wrap': 'wrap',
-            'text-max-width': '80px',
-            'width': '60px',
-            'height': '60px',
-            'shape': 'rectangle',
-            'text-outline-color': '#000',
-            'text-outline-width': 1,
-            'text-outline-opacity': 0.5,
-            'label': 'data(label)'
-          }
-        },
-        // Module nodes (different color)
-        {
-          selector: 'node[type = "module"]',
-          style: {
-            'background-color': '#FF9800',
-            'border-color': '#E65100',
-            'shape': 'diamond',
-            'color': '#fff',
-            'text-valign': 'center',
-            'text-halign': 'center',
-            'font-size': '12px',
-            'font-weight': 'bold',
-            'text-wrap': 'wrap',
-            'text-max-width': '80px',
-            'width': '60px',
-            'height': '60px',
-            'text-outline-color': '#000',
-            'text-outline-width': 1,
-            'text-outline-opacity': 0.5,
-            'label': 'data(label)'
-          }
-        },
-        // Edge styles
-        {
-          selector: 'edge',
-          style: {
-            'width': 3,
-            'line-color': '#666',
-            'target-arrow-color': '#666',
-            'target-arrow-shape': 'triangle',
-            'target-arrow-width': 8,
-            'curve-style': 'bezier',
-            'opacity': 0.7
-          }
-        },
-        // Explicit dependency edges (depends_on)
-        {
-          selector: 'edge[relationshipType = "explicit"]',
-          style: {
-            'width': 4,
-            'line-color': '#FF5722',
-            'target-arrow-color': '#FF5722',
-            'target-arrow-shape': 'triangle',
-            'target-arrow-width': 10,
-            'curve-style': 'bezier',
-            'opacity': 0.9,
-            'line-style': 'solid'
-          }
-        },
-        // Implicit dependency edges (references)
-        {
-          selector: 'edge[relationshipType = "implicit"]',
-          style: {
-            'width': 2,
-            'line-color': '#9C27B0',
-            'target-arrow-color': '#9C27B0',
-            'target-arrow-shape': 'triangle',
-            'target-arrow-width': 6,
-            'curve-style': 'bezier',
-            'opacity': 0.6,
-            'line-style': 'dashed'
-          }
-        },
-        // Active elements (instead of hover)
-        {
-          selector: 'node:active',
-          style: {
-            'background-color': '#81C784',
-            'border-color': '#4CAF50',
-            'border-width': 3,
-            'font-size': '14px',
-            'width': '70px',
-            'height': '70px'
-          }
-        },
-        // Selected elements
-        {
-          selector: 'node:selected',
-          style: {
-            'background-color': '#2196F3',
-            'border-color': '#1976D2',
-            'border-width': 4
-          }
-        },
-        {
-          selector: 'edge:selected',
-          style: {
-            'width': 6,
-            'line-color': '#2196F3',
-            'target-arrow-color': '#2196F3'
-          }
-        }
-      ];
+    // Render the tree
+    renderDependencyTree(dependencyTree, treeRoot);
+  }
 
-      // Create cytoscape instance and assign to global variable
-      const cytoscapeInstance = cytoscape({
-        container,
-        elements,
-        style,
-        // Set up label mapping
-        ready: function() {
-          this.nodes().forEach(node => {
-            node.data('label', node.data('label'));
-          });
-        },
-        layout: {
-          name: 'cose',
-          idealEdgeLength: 120,
-          nodeOverlap: 30,
-          refresh: 20,
-          fit: true,
-          padding: 30,
-          randomize: false,
-          componentSpacing: 100,
-          nodeRepulsion: 400000,
-          gravity: 80,
-          numIter: 1000,
-          initialTemp: 200,
-          coolingFactor: 0.95,
-          minTemp: 1.0
-        },
-        minZoom: 0.1,
-        maxZoom: 3
-      });
-      
-      // Assign to global variable
-      cy = cytoscapeInstance;
-      console.log('Cytoscape instance created and assigned to global cy:', !!cy);
-      
-      // Ensure proper node styling is applied
-      cy.nodes().forEach(node => {
-        const nodeType = node.data('type');
-        if (nodeType === 'module') {
-          node.style({
-            'background-color': '#FF9800',
-            'border-color': '#E65100',
-            'shape': 'diamond',
-            'width': '60px',
-            'height': '60px',
-            'color': '#fff',
-            'text-valign': 'center',
-            'text-halign': 'center',
-            'font-size': '12px',
-            'font-weight': 'bold',
-            'text-wrap': 'wrap',
-            'text-max-width': '80px',
-            'text-outline-color': '#000',
-            'text-outline-width': 1,
-            'text-outline-opacity': 0.5
-          });
-        } else {
-          node.style({
-            'background-color': '#4CAF50',
-            'border-color': '#2E7D32',
-            'shape': 'rectangle',
-            'width': '60px',
-            'height': '60px',
-            'color': '#fff',
-            'text-valign': 'center',
-            'text-halign': 'center',
-            'font-size': '12px',
-            'font-weight': 'bold',
-            'text-wrap': 'wrap',
-            'text-max-width': '80px',
-            'text-outline-color': '#000',
-            'text-outline-width': 1,
-            'text-outline-opacity': 0.5
-          });
-        }
-      });
+  treeArea.appendChild(treeRoot);
+  treeContainer.appendChild(header);
+  treeContainer.appendChild(treeArea);
+  container.appendChild(treeContainer);
 
-      // Add controls and legend
-      const graphElements = createGraphControls(container);
-      container.style.position = 'relative';
-      container.appendChild(graphElements.controls);
-      container.appendChild(graphElements.legend);
-      container.appendChild(graphElements.legendControls);
-      document.body.appendChild(graphElements.details);
-      document.body.appendChild(graphElements.status);
+  // Add search functionality with enhanced features
+  searchInput.addEventListener('input', (e) => {
+    const query = e.target.value.toLowerCase();
+    filterCleanTree(query, treeRoot);
+  });
 
-      // Add event listeners for better UX
-      let drawingStartNode = null;
-      let isDrawingMode = false;
-
-      // Add hover effects using event handlers
-      cy.on('mouseover', 'node', function(evt) {
-        const node = evt.target;
-        node.style({
-          'background-color': '#81C784',
-          'border-color': '#4CAF50',
-          'border-width': 3,
-          'font-size': '14px',
-          'width': '70px',
-          'height': '70px'
-        });
-        
-        const tooltip = document.createElement('div');
-        tooltip.id = 'node-tooltip';
-        tooltip.style.cssText = `
-          position: absolute;
-          background: rgba(0, 0, 0, 0.9);
-          color: white;
-          padding: 8px 12px;
-          border-radius: 4px;
-          font-size: 12px;
-          z-index: 10000;
-          pointer-events: none;
-          max-width: 200px;
-          max-height: 150px;
-          overflow-y: auto;
-          word-wrap: break-word;
-          box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-        `;
-        tooltip.textContent = `Resource: ${node.data('label')}`;
-        document.body.appendChild(tooltip);
-      });
-
-      cy.on('mousemove', 'node', function(evt) {
-        const tooltip = document.getElementById('node-tooltip');
-        if (tooltip) {
-          tooltip.style.left = (evt.renderedPosition.x + 15) + 'px';
-          tooltip.style.top = (evt.renderedPosition.y - 15) + 'px';
-        }
-      });
-
-      // Edge hover effects
-      cy.on('mouseover', 'edge', function(evt) {
-        const edge = evt.target;
-        edge.style({
-          'width': 5,
-          'line-color': '#333',
-          'target-arrow-color': '#333',
-          'opacity': 1
-        });
-      });
-
-      cy.on('mouseout', 'edge', function(evt) {
-        const edge = evt.target;
-        edge.style({
-          'width': 3,
-          'line-color': '#666',
-          'target-arrow-color': '#666',
-          'opacity': 0.7
-        });
-      });
-
-      // Double-click to delete edges
-      cy.on('cxttap', 'edge', function(evt) {
-        const edge = evt.target;
-        edge.remove();
-        console.log('Edge deleted, triggering save...');
-        saveGraph();
-      });
-
-      // Load saved graph after cytoscape is ready
-      setTimeout(() => {
-        loadGraph();
-      }, 1000);
-      
-      // Start simple auto-save timer
-      setInterval(() => {
-        if (cy) {
-          saveGraph();
-        }
-      }, 30000); // Save every 30 seconds
-
-      cy.on('mouseout', 'node', function(evt) {
-        const node = evt.target;
-        const nodeType = node.data('type');
-        
-        // Reset node styling based on type
-        if (nodeType === 'module') {
-          node.style({
-            'background-color': '#FF9800',
-            'border-color': '#E65100',
-            'border-width': 2,
-            'font-size': '12px',
-            'width': '60px',
-            'height': '60px'
-          });
-        } else {
-          node.style({
-            'background-color': '#4CAF50',
-            'border-color': '#2E7D32',
-            'border-width': 2,
-            'font-size': '12px',
-            'width': '60px',
-            'height': '60px'
-          });
-        }
-        
-        const tooltip = document.getElementById('node-tooltip');
-        if (tooltip) tooltip.remove();
-      });
-
-      // Draw mode interactions
-      cy.on('tap', 'node', function(evt) {
-        const node = evt.target;
-        const drawBtn = document.querySelector('[title*="Draw"]');
-        const isDrawingMode = drawBtn && drawBtn.classList.contains('active');
-        
-        if (isDrawingMode) {
-          if (!drawingStartNode) {
-            // Start drawing - highlight the first node
-            drawingStartNode = node;
-            node.style({
-              'background-color': '#2196F3',
-              'border-color': '#1976D2',
-              'border-width': 4
-            });
-            console.log('Draw mode: First node selected:', node.data('label'));
-            
-            // Update status indicator
-            const statusText = document.getElementById('draw-status-text');
-            if (statusText) {
-              statusText.textContent = `Draw mode: First node selected - Click another node to complete relationship`;
-              statusText.style.color = '#FF9800';
-            }
-          } else if (drawingStartNode.id() !== node.id()) {
-            // Complete the relationship
-            const edgeId = `edge-${Date.now()}`;
-            cy.add({
-              group: 'edges',
-              data: {
-                id: edgeId,
-                source: drawingStartNode.id(),
-                target: node.id(),
-                relationshipType: 'user-drawn',
-                label: `${drawingStartNode.data('label')} → ${node.data('label')}`
-              }
-            });
-            
-            // Style the new relationship
-            cy.getElementById(edgeId).style({
-              'width': 3,
-              'line-color': '#9C27B0',
-              'target-arrow-color': '#9C27B0',
-              'target-arrow-shape': 'triangle',
-              'target-arrow-width': 8,
-              'opacity': 0.8,
-              'curve-style': 'bezier'
-            });
-            
-            // Reset first node styling - preserve label
-            const startNodeLabel = drawingStartNode.data('label');
-            drawingStartNode.style({
-              'background-color': drawingStartNode.data('type') === 'module' ? '#FF9800' : '#4CAF50',
-              'border-color': drawingStartNode.data('type') === 'module' ? '#E65100' : '#2E7D32',
-              'border-width': 2,
-              'label': startNodeLabel
-            });
-            
-            // Reset drawing state
-            drawingStartNode = null;
-            console.log('Draw mode: Relationship created');
-            
-            // Auto-save after creating new relationship
-            console.log('Relationship created, triggering save...');
-            saveGraph();
-            
-            // Update status indicator
-            const statusText = document.getElementById('draw-status-text');
-            if (statusText) {
-              statusText.textContent = 'Draw mode: Active - Click nodes to create relationships';
-              statusText.style.color = '#2196F3';
-            }
-          } else if (drawingStartNode.id() === node.id()) {
-            // Clicked the same node - cancel drawing
-            const startNodeLabel = drawingStartNode.data('label');
-            drawingStartNode.style({
-              'background-color': drawingStartNode.data('type') === 'module' ? '#FF9800' : '#4CAF50',
-              'border-color': drawingStartNode.data('type') === 'module' ? '#E65100' : '#2E7D32',
-              'border-width': 2,
-              'label': startNodeLabel
-            });
-            drawingStartNode = null;
-            console.log('Draw mode: Drawing cancelled');
-            
-            // Update status indicator
-            const statusText = document.getElementById('draw-status-text');
-            if (statusText) {
-              statusText.textContent = 'Draw mode: Active - Click nodes to create relationships';
-              statusText.style.color = '#2196F3';
-            }
-          }
-        } else {
-          console.log('Selected node:', node.data('label'));
-          showNodeDetails(node);
-          
-          // Show impact analysis if dependency data is available
-          if (window.tfDependencyData) {
-            showImpactAnalysis(node, window.tfDependencyData);
-          }
-        }
-      });
-
-      // Cancel drawing on background click
-      cy.on('tap', function(evt) {
-        if (evt.target === cy && drawingStartNode) {
-          drawingStartNode = null;
-        }
-      });
-
-      // Enable panning by default
-      cy.panningEnabled(true);
-      
-      // Add keyboard shortcuts (only once)
-      if (!window.tfGraphKeyboardBound) {
-        window.tfGraphKeyboardBound = true;
-        document.addEventListener('keydown', function(e) {
-          if (!cy) return;
-          
-          switch(e.key) {
-            case '=':
-            case '+':
-              if (e.ctrlKey || e.metaKey) {
-                e.preventDefault();
-                cy.zoom({ level: cy.zoom() * 1.2 });
-              }
-              break;
-            case '-':
-              if (e.ctrlKey || e.metaKey) {
-                e.preventDefault();
-                cy.zoom({ level: cy.zoom() / 1.2 });
-              }
-              break;
-            case '0':
-              if (e.ctrlKey || e.metaKey) {
-                e.preventDefault();
-                cy.fit();
-                cy.center();
-              }
-              break;
-          }
-        });
-      }
-
-      // Run initial hierarchical tree layout for new graphs
-      setTimeout(() => {
-        applyHierarchicalLayout(cy);
-      }, 100);
-      
-      // Store the layout to prevent it from being re-run
-      cy.layout = cy.layout.bind(cy);
+  // Add keyboard shortcuts
+  document.addEventListener('keydown', (e) => {
+    // Ctrl+F or Cmd+F to focus search
+    if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+      e.preventDefault();
+      searchInput.focus();
+      searchInput.select();
     }
-    // If graph exists and elements haven't changed, do nothing - keep current state
+    
+    // Escape to clear search
+    if (e.key === 'Escape' && searchInput === document.activeElement) {
+      searchInput.value = '';
+      filterCleanTree('', treeRoot);
+      clearButton.style.display = 'none';
+    }
+  });
+
+  // Add ARIA attributes for accessibility
+  treeContainer.setAttribute('role', 'tree');
+  treeContainer.setAttribute('aria-label', 'Terraform resources and modules tree');
+}
+
+// Context menu for resources
+function showResourceContextMenu(event, resource) {
+  // Remove existing context menu
+  const existingMenu = document.getElementById('resource-context-menu');
+  if (existingMenu) {
+    existingMenu.remove();
+  }
+
+  const menu = document.createElement('div');
+  menu.id = 'resource-context-menu';
+  menu.style.cssText = `
+    position: fixed;
+    top: ${event.clientY}px;
+    left: ${event.clientX}px;
+    background: white;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    z-index: 10000;
+    min-width: 200px;
+    padding: 8px 0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  `;
+
+  const menuItems = [
+    {
+      label: '📋 Copy Resource Name',
+      action: () => copyToClipboard(resource.type + '.' + resource.name)
+    },
+    {
+      label: '📋 Copy Resource Type',
+      action: () => copyToClipboard(resource.type)
+    },
+    {
+      label: '📖 View Documentation',
+      action: () => openResourceDocs(resource.type)
+    },
+    {
+      label: 'ℹ️ View Details',
+      action: () => showResourceDetails(resource)
+    }
+  ];
+
+  menuItems.forEach(item => {
+    const menuItem = document.createElement('div');
+    menuItem.style.cssText = `
+      padding: 8px 16px;
+      cursor: pointer;
+      transition: background-color 0.2s ease;
+      font-size: 14px;
+      color: #374151;
+    `;
+    menuItem.textContent = item.label;
+    
+    menuItem.addEventListener('mouseenter', () => {
+      menuItem.style.background = '#f3f4f6';
+    });
+    
+    menuItem.addEventListener('mouseleave', () => {
+      menuItem.style.background = 'transparent';
+    });
+    
+    menuItem.addEventListener('click', () => {
+      item.action();
+      menu.remove();
+    });
+    
+    menu.appendChild(menuItem);
+  });
+
+  document.body.appendChild(menu);
+
+  // Close menu when clicking outside
+  const closeMenu = (e) => {
+    if (!menu.contains(e.target)) {
+      menu.remove();
+      document.removeEventListener('click', closeMenu);
+    }
+  };
+  
+  setTimeout(() => {
+    document.addEventListener('click', closeMenu);
+  }, 0);
+}
+
+// Utility functions
+function copyToClipboard(text) {
+  navigator.clipboard.writeText(text).then(() => {
+    showToast('Copied to clipboard: ' + text);
+  }).catch(() => {
+    // Fallback for older browsers
+    const textArea = document.createElement('textarea');
+    textArea.value = text;
+    document.body.appendChild(textArea);
+    textArea.select();
+    document.execCommand('copy');
+    document.body.removeChild(textArea);
+    showToast('Copied to clipboard: ' + text);
   });
 }
 
+function openResourceDocs(resourceType) {
+  const url = getResourceDocsUrl(resourceType);
+  window.open(url, '_blank');
+}
+
+function showToast(message) {
+  const toast = document.createElement('div');
+  toast.style.cssText = `
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: #10b981;
+    color: white;
+    padding: 12px 16px;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    z-index: 10001;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 14px;
+    font-weight: 500;
+    animation: slideIn 0.3s ease;
+  `;
+  toast.textContent = message;
+  
+  // Add animation keyframes
+  const style = document.createElement('style');
+  style.textContent = `
+    @keyframes slideIn {
+      from { transform: translateX(100%); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+  `;
+  document.head.appendChild(style);
+  
+  document.body.appendChild(toast);
+  
+  setTimeout(() => {
+    toast.style.animation = 'slideIn 0.3s ease reverse';
+    setTimeout(() => {
+      toast.remove();
+      style.remove();
+    }, 300);
+  }, 2000);
+}
+
+// Enhanced resource details popup
+function showResourceDetails(resource) {
+  // Remove existing popup
+  const existingPopup = document.getElementById('resource-details-popup');
+  if (existingPopup) {
+    existingPopup.remove();
+  }
+
+  const popup = document.createElement('div');
+  popup.id = 'resource-details-popup';
+  popup.style.cssText = `
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+    z-index: 10000;
+    max-width: 500px;
+    width: 90vw;
+    max-height: 80vh;
+    overflow-y: auto;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    animation: popupFadeIn 0.3s ease;
+  `;
+
+  // Add animation keyframes
+  const style = document.createElement('style');
+  style.textContent = `
+    @keyframes popupFadeIn {
+      from { opacity: 0; transform: translate(-50%, -50%) scale(0.95); }
+      to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+    }
+  `;
+  document.head.appendChild(style);
+
+  // Header
+  const header = document.createElement('div');
+  header.style.cssText = `
+    padding: 20px 24px 16px;
+    border-bottom: 1px solid #e5e7eb;
+    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+    border-radius: 12px 12px 0 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  `;
+
+  const title = document.createElement('div');
+  title.style.cssText = `
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  `;
+
+  const icon = document.createElement('div');
+  icon.style.cssText = `
+    width: 40px;
+    height: 40px;
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 18px;
+    font-weight: bold;
+  `;
+  icon.textContent = 'R';
+
+  const titleText = document.createElement('div');
+  titleText.style.cssText = `
+    font-size: 18px;
+    font-weight: 600;
+    color: #1f2937;
+  `;
+  titleText.textContent = resource.type + '.' + resource.name;
+
+  const closeBtn = document.createElement('button');
+  closeBtn.innerHTML = '✕';
+  closeBtn.setAttribute('aria-label', 'Close details');
+  closeBtn.style.cssText = `
+    background: none;
+    border: none;
+    color: #6b7280;
+    cursor: pointer;
+    padding: 8px;
+    border-radius: 6px;
+    font-size: 16px;
+    transition: all 0.2s ease;
+  `;
+  closeBtn.addEventListener('mouseenter', () => {
+    closeBtn.style.background = '#f3f4f6';
+    closeBtn.style.color = '#374151';
+  });
+  closeBtn.addEventListener('mouseleave', () => {
+    closeBtn.style.background = 'none';
+    closeBtn.style.color = '#6b7280';
+  });
+  closeBtn.addEventListener('click', () => {
+    popup.remove();
+    style.remove();
+  });
+
+  title.appendChild(icon);
+  title.appendChild(titleText);
+  header.appendChild(title);
+  header.appendChild(closeBtn);
+
+  // Content
+  const content = document.createElement('div');
+  content.style.cssText = `
+    padding: 24px;
+  `;
+
+  // Resource type
+  const typeSection = document.createElement('div');
+  typeSection.style.cssText = `
+    margin-bottom: 20px;
+  `;
+  typeSection.innerHTML = `
+    <div style="font-size: 12px; font-weight: 600; color: #6b7280; text-transform: uppercase; margin-bottom: 4px;">Resource Type</div>
+    <div style="font-family: 'SF Mono', 'Monaco', 'Cascadia Code', monospace; font-size: 14px; color: #1f2937; background: #f8fafc; padding: 8px 12px; border-radius: 6px; border: 1px solid #e5e7eb;">${resource.type}</div>
+  `;
+
+  // Resource name
+  const nameSection = document.createElement('div');
+  nameSection.style.cssText = `
+    margin-bottom: 20px;
+  `;
+  nameSection.innerHTML = `
+    <div style="font-size: 12px; font-weight: 600; color: #6b7280; text-transform: uppercase; margin-bottom: 4px;">Resource Name</div>
+    <div style="font-family: 'SF Mono', 'Monaco', 'Cascadia Code', monospace; font-size: 14px; color: #1f2937; background: #f8fafc; padding: 8px 12px; border-radius: 6px; border: 1px solid #e5e7eb;">${resource.name}</div>
+  `;
+
+  // Resource attributes
+  if (resource.attributes && resource.attributes.length > 0) {
+    const attrsSection = document.createElement('div');
+    attrsSection.style.cssText = `
+      margin-bottom: 20px;
+    `;
+    attrsSection.innerHTML = `
+      <div style="font-size: 12px; font-weight: 600; color: #6b7280; text-transform: uppercase; margin-bottom: 8px;">Attributes (${resource.attributes.length})</div>
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        ${resource.attributes.map(attr => `
+          <div style="display: flex; align-items: flex-start; gap: 12px; padding: 8px 12px; background: #f8fafc; border-radius: 6px; border: 1px solid #e5e7eb;">
+            <div style="font-family: 'SF Mono', 'Monaco', 'Cascadia Code', monospace; font-size: 12px; color: #6b7280; font-weight: 600; min-width: 120px; flex-shrink: 0;">${attr.name}</div>
+            <div style="font-family: 'SF Mono', 'Monaco', 'Cascadia Code', monospace; font-size: 12px; color: #1f2937; flex: 1; word-break: break-all;">${attr.value || 'null'}</div>
+          </div>
+        `).join('')}
+      </div>
+    `;
+    content.appendChild(attrsSection);
+  }
+
+  // Dependencies
+  if (resource.depends_on && resource.depends_on.length > 0) {
+    const depsSection = document.createElement('div');
+    depsSection.style.cssText = `
+      margin-bottom: 20px;
+    `;
+    depsSection.innerHTML = `
+      <div style="font-size: 12px; font-weight: 600; color: #6b7280; text-transform: uppercase; margin-bottom: 8px;">Dependencies (${resource.depends_on.length})</div>
+      <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+        ${resource.depends_on.map(dep => `
+          <span style="background: #fef3c7; color: #92400e; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-family: 'SF Mono', 'Monaco', 'Cascadia Code', monospace;">${dep}</span>
+        `).join('')}
+      </div>
+    `;
+    content.appendChild(depsSection);
+  }
+
+  // References
+  if (resource.references && resource.references.length > 0) {
+    const refsSection = document.createElement('div');
+    refsSection.style.cssText = `
+      margin-bottom: 20px;
+    `;
+    refsSection.innerHTML = `
+      <div style="font-size: 12px; font-weight: 600; color: #6b7280; text-transform: uppercase; margin-bottom: 8px;">References (${resource.references.length})</div>
+      <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+        ${resource.references.map(ref => `
+          <span style="background: #e0e7ff; color: #3730a3; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-family: 'SF Mono', 'Monaco', 'Cascadia Code', monospace;">${ref}</span>
+        `).join('')}
+      </div>
+    `;
+    content.appendChild(refsSection);
+  }
+
+  // Actions
+  const actionsSection = document.createElement('div');
+  actionsSection.style.cssText = `
+    display: flex;
+    gap: 12px;
+    margin-top: 24px;
+    padding-top: 20px;
+    border-top: 1px solid #e5e7eb;
+  `;
+
+  const copyBtn = document.createElement('button');
+  copyBtn.innerHTML = '📋 Copy Resource Name';
+  copyBtn.style.cssText = `
+    flex: 1;
+    padding: 10px 16px;
+    background: #3b82f6;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    transition: all 0.2s ease;
+  `;
+  copyBtn.addEventListener('mouseenter', () => {
+    copyBtn.style.background = '#2563eb';
+  });
+  copyBtn.addEventListener('mouseleave', () => {
+    copyBtn.style.background = '#3b82f6';
+  });
+  copyBtn.addEventListener('click', () => {
+    copyToClipboard(resource.type + '.' + resource.name);
+  });
+
+  const docsBtn = document.createElement('button');
+  docsBtn.innerHTML = '📖 View Documentation';
+  docsBtn.style.cssText = `
+    flex: 1;
+    padding: 10px 16px;
+    background: #10b981;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    transition: all 0.2s ease;
+  `;
+  docsBtn.addEventListener('mouseenter', () => {
+    docsBtn.style.background = '#059669';
+  });
+  docsBtn.addEventListener('mouseleave', () => {
+    docsBtn.style.background = '#10b981';
+  });
+  docsBtn.addEventListener('click', () => {
+    openResourceDocs(resource.type);
+  });
+
+  actionsSection.appendChild(copyBtn);
+  actionsSection.appendChild(docsBtn);
+
+  content.appendChild(typeSection);
+  content.appendChild(nameSection);
+  content.appendChild(actionsSection);
+
+  popup.appendChild(header);
+  popup.appendChild(content);
+  document.body.appendChild(popup);
+
+  // Close on escape key
+  const handleEscape = (e) => {
+    if (e.key === 'Escape') {
+      popup.remove();
+      style.remove();
+      document.removeEventListener('keydown', handleEscape);
+    }
+  };
+  document.addEventListener('keydown', handleEscape);
+
+  // Close on backdrop click
+  const backdrop = document.createElement('div');
+  backdrop.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 9999;
+  `;
+  backdrop.addEventListener('click', () => {
+    popup.remove();
+    backdrop.remove();
+    style.remove();
+    document.removeEventListener('keydown', handleEscape);
+  });
+  document.body.appendChild(backdrop);
+}
+
+// Enhanced module details popup
+function showModuleDetails(module) {
+  // Remove existing popup
+  const existingPopup = document.getElementById('module-details-popup');
+  if (existingPopup) {
+    existingPopup.remove();
+  }
+
+  const popup = document.createElement('div');
+  popup.id = 'module-details-popup';
+  popup.style.cssText = `
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+    z-index: 10000;
+    max-width: 500px;
+    width: 90vw;
+    max-height: 80vh;
+    overflow-y: auto;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    animation: popupFadeIn 0.3s ease;
+  `;
+
+  // Add animation keyframes
+  const style = document.createElement('style');
+  style.textContent = `
+    @keyframes popupFadeIn {
+      from { opacity: 0; transform: translate(-50%, -50%) scale(0.95); }
+      to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+    }
+  `;
+  document.head.appendChild(style);
+
+  // Header
+  const header = document.createElement('div');
+  header.style.cssText = `
+    padding: 20px 24px 16px;
+    border-bottom: 1px solid #e5e7eb;
+    background: linear-gradient(135deg, #fff7ed 0%, #fed7aa 100%);
+    border-radius: 12px 12px 0 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  `;
+
+  const title = document.createElement('div');
+  title.style.cssText = `
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  `;
+
+  const icon = document.createElement('div');
+  icon.style.cssText = `
+    width: 40px;
+    height: 40px;
+    background: linear-gradient(135deg, #f97316 0%, #ea580c 100%);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 18px;
+    font-weight: bold;
+  `;
+  icon.textContent = 'M';
+
+  const titleText = document.createElement('div');
+  titleText.style.cssText = `
+    font-size: 18px;
+    font-weight: 600;
+    color: #1f2937;
+  `;
+  titleText.textContent = 'module.' + module.name;
+
+  const closeBtn = document.createElement('button');
+  closeBtn.innerHTML = '✕';
+  closeBtn.setAttribute('aria-label', 'Close details');
+  closeBtn.style.cssText = `
+    background: none;
+    border: none;
+    color: #6b7280;
+    cursor: pointer;
+    padding: 8px;
+    border-radius: 6px;
+    font-size: 16px;
+    transition: all 0.2s ease;
+  `;
+  closeBtn.addEventListener('mouseenter', () => {
+    closeBtn.style.background = '#f3f4f6';
+    closeBtn.style.color = '#374151';
+  });
+  closeBtn.addEventListener('mouseleave', () => {
+    closeBtn.style.background = 'none';
+    closeBtn.style.color = '#6b7280';
+  });
+  closeBtn.addEventListener('click', () => {
+    popup.remove();
+    style.remove();
+  });
+
+  title.appendChild(icon);
+  title.appendChild(titleText);
+  header.appendChild(title);
+  header.appendChild(closeBtn);
+
+  // Content
+  const content = document.createElement('div');
+  content.style.cssText = `
+    padding: 24px;
+  `;
+
+  // Module name
+  const nameSection = document.createElement('div');
+  nameSection.style.cssText = `
+    margin-bottom: 20px;
+  `;
+  nameSection.innerHTML = `
+    <div style="font-size: 12px; font-weight: 600; color: #6b7280; text-transform: uppercase; margin-bottom: 4px;">Module Name</div>
+    <div style="font-family: 'SF Mono', 'Monaco', 'Cascadia Code', monospace; font-size: 14px; color: #1f2937; background: #f8fafc; padding: 8px 12px; border-radius: 6px; border: 1px solid #e5e7eb;">${module.name}</div>
+  `;
+
+  // Module source
+  const sourceSection = document.createElement('div');
+  sourceSection.style.cssText = `
+    margin-bottom: 20px;
+  `;
+  sourceSection.innerHTML = `
+    <div style="font-size: 12px; font-weight: 600; color: #6b7280; text-transform: uppercase; margin-bottom: 4px;">Source</div>
+    <div style="font-family: 'SF Mono', 'Monaco', 'Cascadia Code', monospace; font-size: 14px; color: #1f2937; background: #f8fafc; padding: 8px 12px; border-radius: 6px; border: 1px solid #e5e7eb;">${module.source || 'No source specified'}</div>
+  `;
+
+  // Line number
+  const lineSection = document.createElement('div');
+  lineSection.style.cssText = `
+    margin-bottom: 20px;
+  `;
+  lineSection.innerHTML = `
+    <div style="font-size: 12px; font-weight: 600; color: #6b7280; text-transform: uppercase; margin-bottom: 4px;">Line Number</div>
+    <div style="font-family: 'SF Mono', 'Monaco', 'Cascadia Code', monospace; font-size: 14px; color: #1f2937; background: #f8fafc; padding: 8px 12px; border-radius: 6px; border: 1px solid #e5e7eb;">${module.line || 'Unknown'}</div>
+  `;
+
+  // Dependencies
+  if (module.depends_on && module.depends_on.length > 0) {
+    const depsSection = document.createElement('div');
+    depsSection.style.cssText = `
+      margin-bottom: 20px;
+    `;
+    depsSection.innerHTML = `
+      <div style="font-size: 12px; font-weight: 600; color: #6b7280; text-transform: uppercase; margin-bottom: 8px;">Dependencies (${module.depends_on.length})</div>
+      <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+        ${module.depends_on.map(dep => `
+          <span style="background: #fef3c7; color: #92400e; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-family: 'SF Mono', 'Monaco', 'Cascadia Code', monospace;">${dep}</span>
+        `).join('')}
+      </div>
+    `;
+    content.appendChild(depsSection);
+  }
+
+  // References
+  if (module.references && module.references.length > 0) {
+    const refsSection = document.createElement('div');
+    refsSection.style.cssText = `
+      margin-bottom: 20px;
+    `;
+    refsSection.innerHTML = `
+      <div style="font-size: 12px; font-weight: 600; color: #6b7280; text-transform: uppercase; margin-bottom: 8px;">References (${module.references.length})</div>
+      <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+        ${module.references.map(ref => `
+          <span style="background: #e0e7ff; color: #3730a3; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-family: 'SF Mono', 'Monaco', 'Cascadia Code', monospace;">${ref}</span>
+        `).join('')}
+      </div>
+    `;
+    content.appendChild(refsSection);
+  }
+
+  // Actions
+  const actionsSection = document.createElement('div');
+  actionsSection.style.cssText = `
+    display: flex;
+    gap: 12px;
+    margin-top: 24px;
+    padding-top: 20px;
+    border-top: 1px solid #e5e7eb;
+  `;
+
+  const copyBtn = document.createElement('button');
+  copyBtn.innerHTML = '📋 Copy Module Name';
+  copyBtn.style.cssText = `
+    flex: 1;
+    padding: 10px 16px;
+    background: #f97316;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    transition: all 0.2s ease;
+  `;
+  copyBtn.addEventListener('mouseenter', () => {
+    copyBtn.style.background = '#ea580c';
+  });
+  copyBtn.addEventListener('mouseleave', () => {
+    copyBtn.style.background = '#f97316';
+  });
+  copyBtn.addEventListener('click', () => {
+    copyToClipboard('module.' + module.name);
+  });
+
+  const sourceBtn = document.createElement('button');
+  sourceBtn.innerHTML = '🔗 Copy Source';
+  sourceBtn.style.cssText = `
+    flex: 1;
+    padding: 10px 16px;
+    background: #3b82f6;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    transition: all 0.2s ease;
+  `;
+  sourceBtn.addEventListener('mouseenter', () => {
+    sourceBtn.style.background = '#2563eb';
+  });
+  sourceBtn.addEventListener('mouseleave', () => {
+    sourceBtn.style.background = '#3b82f6';
+  });
+  sourceBtn.addEventListener('click', () => {
+    copyToClipboard(module.source || 'No source specified');
+  });
+
+  actionsSection.appendChild(copyBtn);
+  actionsSection.appendChild(sourceBtn);
+
+  content.appendChild(nameSection);
+  content.appendChild(sourceSection);
+  content.appendChild(lineSection);
+  content.appendChild(actionsSection);
+
+  popup.appendChild(header);
+  popup.appendChild(content);
+  document.body.appendChild(popup);
+
+  // Close on escape key
+  const handleEscape = (e) => {
+    if (e.key === 'Escape') {
+      popup.remove();
+      style.remove();
+      document.removeEventListener('keydown', handleEscape);
+    }
+  };
+  document.addEventListener('keydown', handleEscape);
+
+  // Close on backdrop click
+  const backdrop = document.createElement('div');
+  backdrop.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 9999;
+  `;
+  backdrop.addEventListener('click', () => {
+    popup.remove();
+    backdrop.remove();
+    style.remove();
+    document.removeEventListener('keydown', handleEscape);
+  });
+  document.body.appendChild(backdrop);
+}
+
+function createCleanProviderSection(provider, resources) {
+  const section = document.createElement('div');
+  section.className = 'provider-section';
+  section.style.cssText = `
+    margin-bottom: 24px;
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  `;
+
+  // Provider header
+  const header = document.createElement('div');
+  header.setAttribute('role', 'button');
+  header.setAttribute('tabindex', '0');
+  header.setAttribute('aria-expanded', 'true');
+  header.setAttribute('aria-label', 'Toggle ' + provider.toUpperCase() + ' provider section');
+  header.style.cssText = `
+    padding: 16px 20px;
+    background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
+    border-bottom: 1px solid #d1d5db;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    outline: none;
+  `;
+
+  header.addEventListener('mouseenter', () => {
+    header.style.background = 'linear-gradient(135deg, #e5e7eb 0%, #d1d5db 100%)';
+  });
+
+  header.addEventListener('mouseleave', () => {
+    header.style.background = 'linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%)';
+  });
+
+  // Focus states for accessibility
+  header.addEventListener('focus', () => {
+    header.style.boxShadow = '0 0 0 3px rgba(59, 130, 246, 0.3)';
+  });
+
+  header.addEventListener('blur', () => {
+    header.style.boxShadow = 'none';
+  });
+
+  // Keyboard navigation
+  header.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      header.click();
+    }
+  });
+
+  // Provider icon
+  const icon = document.createElement('div');
+  icon.style.cssText = `
+    width: 32px;
+    height: 32px;
+    background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-weight: bold;
+    font-size: 14px;
+    flex-shrink: 0;
+  `;
+  icon.textContent = provider.toUpperCase().charAt(0);
+
+  // Provider info
+  const info = document.createElement('div');
+  info.style.cssText = `
+    flex: 1;
+  `;
+
+  const name = document.createElement('div');
+  name.style.cssText = `
+    font-weight: 600;
+    color: #1f2937;
+    font-size: 16px;
+    margin-bottom: 2px;
+  `;
+  name.textContent = provider.toUpperCase() + ' Provider';
+
+  const count = document.createElement('div');
+  count.style.cssText = `
+    color: #6b7280;
+    font-size: 12px;
+  `;
+  count.textContent = resources.length + ' resources';
+
+  info.appendChild(name);
+  info.appendChild(count);
+
+  // Expand/collapse icon
+  const expandIcon = document.createElement('div');
+  expandIcon.className = 'expand-icon';
+  expandIcon.style.cssText = `
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #6b7280;
+    font-size: 12px;
+    transition: transform 0.2s ease;
+  `;
+  expandIcon.textContent = '▼';
+
+  header.appendChild(icon);
+  header.appendChild(info);
+  header.appendChild(expandIcon);
+
+  // Resources list
+  const resourcesList = document.createElement('div');
+  resourcesList.className = 'resources-list';
+  resourcesList.style.cssText = `
+    display: block;
+    padding: 8px 0;
+  `;
+
+  resources.forEach((resource, index) => {
+    const resourceItem = createCleanResourceItem(resource, index === resources.length - 1);
+    resourcesList.appendChild(resourceItem);
+  });
+
+  section.appendChild(header);
+  section.appendChild(resourcesList);
+
+  // Toggle functionality
+  header.addEventListener('click', () => {
+    const isExpanded = resourcesList.style.display === 'block';
+    resourcesList.style.display = isExpanded ? 'none' : 'block';
+    expandIcon.style.transform = isExpanded ? 'rotate(0deg)' : 'rotate(-90deg)';
+  });
+
+  return section;
+}
+
+function createCleanResourceItem(resource, isLast) {
+  const item = document.createElement('div');
+  item.className = 'resource-item';
+  item.setAttribute('role', 'button');
+  item.setAttribute('tabindex', '0');
+  item.setAttribute('aria-label', 'Resource ' + resource.type + '.' + resource.name);
+  item.style.cssText = `
+    padding: 12px 20px;
+    border-bottom: 1px solid #f3f4f6;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    outline: none;
+  `;
+
+  item.addEventListener('mouseenter', () => {
+    item.style.background = '#f9fafb';
+  });
+
+  item.addEventListener('mouseleave', () => {
+    item.style.background = 'transparent';
+  });
+
+  item.addEventListener('click', () => {
+    showResourceDetails(resource);
+  });
+
+  // Focus states for accessibility
+  item.addEventListener('focus', () => {
+    item.style.background = '#f0f9ff';
+    item.style.boxShadow = 'inset 3px 0 0 #3b82f6';
+  });
+
+  item.addEventListener('blur', () => {
+    item.style.background = 'transparent';
+    item.style.boxShadow = 'none';
+  });
+
+  // Keyboard navigation
+  item.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      showResourceDetails(resource);
+    }
+  });
+
+  // Right-click context menu
+  item.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    showResourceContextMenu(e, resource);
+  });
+
+  // Resource icon
+  const icon = document.createElement('div');
+  icon.style.cssText = `
+    width: 24px;
+    height: 24px;
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 12px;
+    font-weight: bold;
+    flex-shrink: 0;
+  `;
+  icon.textContent = 'R';
+
+  // Resource info
+  const info = document.createElement('div');
+  info.style.cssText = `
+    flex: 1;
+  `;
+
+  const name = document.createElement('div');
+  name.style.cssText = `
+    font-weight: 500;
+    color: #1f2937;
+    font-size: 14px;
+    margin-bottom: 2px;
+  `;
+  name.textContent = resource.type + '.' + resource.name;
+
+  const type = document.createElement('div');
+  type.style.cssText = `
+    color: #6b7280;
+    font-size: 12px;
+    font-family: 'SF Mono', 'Monaco', 'Cascadia Code', monospace;
+  `;
+  type.textContent = resource.type;
+
+  info.appendChild(name);
+  info.appendChild(type);
+
+  // Dependencies indicator
+  const depsIndicator = document.createElement('div');
+  depsIndicator.style.cssText = `
+    display: flex;
+    gap: 4px;
+    align-items: center;
+  `;
+
+  if (resource.depends_on && resource.depends_on.length > 0) {
+    const depsBadge = document.createElement('span');
+    depsBadge.style.cssText = `
+      background: #fef3c7;
+      color: #92400e;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: 600;
+    `;
+    depsBadge.textContent = resource.depends_on.length + ' deps';
+    depsIndicator.appendChild(depsBadge);
+  }
+
+  if (resource.references && resource.references.length > 0) {
+    const refsBadge = document.createElement('span');
+    refsBadge.style.cssText = `
+      background: #e0e7ff;
+      color: #3730a3;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: 600;
+    `;
+    refsBadge.textContent = resource.references.length + ' refs';
+    depsIndicator.appendChild(refsBadge);
+  }
+
+  item.appendChild(icon);
+  item.appendChild(info);
+  item.appendChild(depsIndicator);
+
+  return item;
+}
+
+function createCleanModulesSection(modules) {
+  const section = document.createElement('div');
+  section.className = 'modules-section';
+  section.style.cssText = `
+    margin-bottom: 24px;
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  `;
+
+  // Modules header
+  const header = document.createElement('div');
+  header.style.cssText = `
+    padding: 16px 20px;
+    background: linear-gradient(135deg, #fff7ed 0%, #fed7aa 100%);
+    border-bottom: 1px solid #d1d5db;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+  `;
+
+  header.addEventListener('mouseenter', () => {
+    header.style.background = 'linear-gradient(135deg, #fed7aa 0%, #fdba74 100%)';
+  });
+
+  header.addEventListener('mouseleave', () => {
+    header.style.background = 'linear-gradient(135deg, #fff7ed 0%, #fed7aa 100%)';
+  });
+
+  // Module icon
+  const icon = document.createElement('div');
+  icon.style.cssText = `
+    width: 32px;
+    height: 32px;
+    background: linear-gradient(135deg, #f97316 0%, #ea580c 100%);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-weight: bold;
+    font-size: 14px;
+    flex-shrink: 0;
+  `;
+  icon.textContent = 'M';
+
+  // Module info
+  const info = document.createElement('div');
+  info.style.cssText = `
+    flex: 1;
+  `;
+
+  const name = document.createElement('div');
+  name.style.cssText = `
+    font-weight: 600;
+    color: #1f2937;
+    font-size: 16px;
+    margin-bottom: 2px;
+  `;
+  name.textContent = 'Modules';
+
+  const count = document.createElement('div');
+  count.style.cssText = `
+    color: #6b7280;
+    font-size: 12px;
+  `;
+  count.textContent = modules.length + ' modules';
+
+  info.appendChild(name);
+  info.appendChild(count);
+
+  // Expand/collapse icon
+  const expandIcon = document.createElement('div');
+  expandIcon.className = 'expand-icon';
+  expandIcon.style.cssText = `
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #6b7280;
+    font-size: 12px;
+    transition: transform 0.2s ease;
+  `;
+  expandIcon.textContent = '▼';
+
+  header.appendChild(icon);
+  header.appendChild(info);
+  header.appendChild(expandIcon);
+
+  // Modules list
+  const modulesList = document.createElement('div');
+  modulesList.className = 'modules-list';
+  modulesList.style.cssText = `
+    display: block;
+    padding: 8px 0;
+  `;
+
+  modules.forEach((module, index) => {
+    const moduleItem = createCleanModuleItem(module, index === modules.length - 1);
+    modulesList.appendChild(moduleItem);
+  });
+
+  section.appendChild(header);
+  section.appendChild(modulesList);
+
+  // Toggle functionality
+  header.addEventListener('click', () => {
+    const isExpanded = modulesList.style.display === 'block';
+    modulesList.style.display = isExpanded ? 'none' : 'block';
+    expandIcon.style.transform = isExpanded ? 'rotate(0deg)' : 'rotate(-90deg)';
+  });
+
+  return section;
+}
+
+function createCleanModuleItem(module, isLast) {
+  const item = document.createElement('div');
+  item.className = 'module-item';
+  item.style.cssText = `
+    padding: 12px 20px;
+    border-bottom: 1px solid #f3f4f6;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  `;
+
+  item.addEventListener('mouseenter', () => {
+    item.style.background = '#fff7ed';
+  });
+
+  item.addEventListener('mouseleave', () => {
+    item.style.background = 'transparent';
+  });
+
+  item.addEventListener('click', () => {
+    showModuleDetails(module);
+  });
+
+  // Module icon
+  const icon = document.createElement('div');
+  icon.style.cssText = `
+    width: 24px;
+    height: 24px;
+    background: linear-gradient(135deg, #f97316 0%, #ea580c 100%);
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 12px;
+    font-weight: bold;
+    flex-shrink: 0;
+  `;
+  icon.textContent = 'M';
+
+  // Module info
+  const info = document.createElement('div');
+  info.style.cssText = `
+    flex: 1;
+  `;
+
+  const name = document.createElement('div');
+  name.style.cssText = `
+    font-weight: 500;
+    color: #1f2937;
+    font-size: 14px;
+    margin-bottom: 2px;
+  `;
+  name.textContent = 'module.' + module.name;
+
+  const source = document.createElement('div');
+  source.style.cssText = `
+    color: #6b7280;
+    font-size: 12px;
+    font-family: 'SF Mono', 'Monaco', 'Cascadia Code', monospace;
+  `;
+  source.textContent = module.source || 'No source specified';
+
+  info.appendChild(name);
+  info.appendChild(source);
+
+  item.appendChild(icon);
+  item.appendChild(info);
+
+  return item;
+}
+
+function createResourceNode(resource, isLast) {
+  const node = createTreeNode('🔧 ' + resource.type + '.' + resource.name, false);
+  
+  // Add dependency indicators
+  const indicators = [];
+  if (resource.depends_on && resource.depends_on.length > 0) {
+    indicators.push('deps:' + resource.depends_on.length);
+  }
+  if (resource.references && resource.references.length > 0) {
+    indicators.push('refs:' + resource.references.length);
+  }
+  
+  if (indicators.length > 0) {
+    const indicatorSpan = document.createElement('span');
+    indicatorSpan.textContent = ' [' + indicators.join(', ') + ']';
+    indicatorSpan.style.cssText = `
+      color: #6b7280;
+      font-size: 11px;
+      margin-left: 4px;
+    `;
+    node.querySelector('span:last-child').appendChild(indicatorSpan);
+  }
+
+  // Add click handler to show details
+  node.addEventListener('click', (e) => {
+    if (e.target !== node.querySelector('.expand-btn')) {
+      showResourceDetails(resource);
+    }
+  });
+
+  return node;
+}
+
+function createModulesNode(modules, isLast) {
+  const node = createTreeNode('📁 Modules', true);
+  
+  // Add module count
+  const countSpan = document.createElement('span');
+  countSpan.textContent = ' (' + modules.length + ')';
+  countSpan.style.cssText = `
+    color: #6b7280;
+    font-size: 11px;
+    margin-left: 4px;
+  `;
+  node.querySelector('span:last-child').appendChild(countSpan);
+
+  // Add modules as children
+  modules.forEach((module, index) => {
+    const isLastModule = index === modules.length - 1;
+    const moduleNode = createModuleNode(module, isLastModule);
+    node.querySelector('.tree-children').appendChild(moduleNode);
+  });
+
+  return node;
+}
+
+function createModuleNode(module, isLast) {
+  const node = createTreeNode('📦 module.' + module.name, false);
+  
+  // Add source info
+  if (module.source) {
+    const sourceSpan = document.createElement('span');
+    sourceSpan.textContent = ' (' + module.source + ')';
+    sourceSpan.style.cssText = `
+      color: #6b7280;
+      font-size: 11px;
+      margin-left: 4px;
+    `;
+    node.querySelector('span:last-child').appendChild(sourceSpan);
+  }
+
+  // Add click handler to show details
+  node.addEventListener('click', (e) => {
+    if (e.target !== node.querySelector('.expand-btn')) {
+      showModuleDetails(module);
+    }
+  });
+
+  return node;
+}
+
+function toggleNode(node) {
+  const children = node.querySelector('.tree-children');
+  const expandBtn = node.querySelector('.expand-btn');
+  
+  if (children.style.display === 'none') {
+    children.style.display = 'block';
+    expandBtn.textContent = '▼';
+  } else {
+    children.style.display = 'none';
+    expandBtn.textContent = '▶';
+  }
+}
+
+
+function filterCleanTree(query, container) {
+  const sections = container.querySelectorAll('.provider-section, .modules-section');
+  
+  if (!query) {
+    // Show all sections and reset their state
+    sections.forEach(section => {
+      section.style.display = 'block';
+      const list = section.querySelector('.resources-list, .modules-list');
+      if (list) {
+        list.style.display = 'block';
+        const expandIcon = section.querySelector('.expand-icon');
+        if (expandIcon) expandIcon.style.transform = 'rotate(0deg)';
+      }
+      // Remove highlighting
+      const items = section.querySelectorAll('.resource-item, .module-item');
+      items.forEach(item => {
+        item.style.background = 'transparent';
+        const nameEl = item.querySelector('div:first-child');
+        const typeEl = item.querySelector('div:last-child');
+        if (nameEl) nameEl.innerHTML = nameEl.textContent;
+        if (typeEl) typeEl.innerHTML = typeEl.textContent;
+      });
+    });
+    return;
+  }
+  
+  const searchQuery = query.toLowerCase();
+  
+  sections.forEach(section => {
+    const items = section.querySelectorAll('.resource-item, .module-item');
+    let hasMatches = false;
+    
+    items.forEach(item => {
+      const nameEl = item.querySelector('div:first-child');
+      const typeEl = item.querySelector('div:last-child');
+      const name = nameEl ? nameEl.textContent.toLowerCase() : '';
+      const type = typeEl ? typeEl.textContent.toLowerCase() : '';
+      const matches = name.includes(searchQuery) || type.includes(searchQuery);
+      
+      if (matches) {
+        item.style.display = 'flex';
+        item.style.background = '#fef3c7'; // Highlight matching items
+        hasMatches = true;
+        
+        // Highlight search terms
+        if (nameEl) {
+          nameEl.innerHTML = highlightText(nameEl.textContent, searchQuery);
+        }
+        if (typeEl) {
+          typeEl.innerHTML = highlightText(typeEl.textContent, searchQuery);
+        }
+      } else {
+        item.style.display = 'none';
+        item.style.background = 'transparent';
+        // Reset highlighting
+        if (nameEl) nameEl.innerHTML = nameEl.textContent;
+        if (typeEl) typeEl.innerHTML = typeEl.textContent;
+      }
+    });
+    
+    if (hasMatches) {
+      section.style.display = 'block';
+      const list = section.querySelector('.resources-list, .modules-list');
+      if (list) {
+        list.style.display = 'block';
+        const expandIcon = section.querySelector('.expand-icon');
+        if (expandIcon) expandIcon.style.transform = 'rotate(0deg)';
+      }
+    } else {
+      section.style.display = 'none';
+    }
+  });
+}
+
+// Helper function to highlight search terms
+function highlightText(text, query) {
+  if (!query) return text;
+  const regex = new RegExp(`(${query})`, 'gi');
+  return text.replace(regex, '<mark style="background: #fbbf24; padding: 1px 2px; border-radius: 2px;">$1</mark>');
+}
+
+
+function initGraph(elements) {
+  // Graph functionality removed - using clean tree view instead
+  return;
+}
 
 // --------- UI wiring ----------
 function setupToggleButton() {
@@ -2457,7 +4295,7 @@ function setupToggleButton() {
           const content = collectCodeText();
           if (content) {
             const { resources, modules } = parseHCL(content);
-            const elements = buildDependencyGraph(resources, modules);
+            const { elements } = buildDependencyGraph(resources, modules);
             initGraph(elements);
             
             // Ensure legend is closed when sidebar is first opened
@@ -2492,7 +4330,9 @@ function ensureSidebar() {
       #tf-explorer-sidebar a{color:#8ab4ff;text-decoration:none}
       #tf-explorer-sidebar .tf-error{color:#ff6b6b}
       #tf-toggle-btn{position:fixed;top:10px;right:380px;padding:6px 10px;border-radius:8px;border:1px solid #333;background:#1b1b1b;color:#eee;z-index:2147483647;cursor:pointer}
-      #tf-graph{height:500px;background:#fafafa;border:2px solid #ddd;border-radius:8px;margin-top:6px;position:relative}
+      #tf-resources-section{margin-bottom:10px}
+      #tf-modules-section{margin-bottom:10px}
+      #tf-graph{height:400px;background:#fafafa;border:2px solid #ddd;border-radius:8px;margin-top:6px;position:relative;overflow:hidden}
     </style>
     <button id="tf-toggle-btn">TF Explorer</button>
     <aside id="tf-explorer-sidebar">
@@ -2526,7 +4366,7 @@ function renderLists(resources, modules) {
     `;
     
     const title = document.createElement('h4');
-    title.textContent = `Resources (${resources.length})`;
+    title.textContent = 'Resources (' + resources.length + ')';
     title.style.cssText = 'margin: 0; font-size: 18px; color: #007bff;';
     
     const toggle = document.createElement('span');
@@ -2558,7 +4398,7 @@ function renderLists(resources, modules) {
       li.style.cssText = 'margin: 8px 0; font-size: 16px;';
       const a = document.createElement('a');
       a.href = getProviderDocUrl(r.type);
-      a.textContent = `${r.type}.${r.name}`;
+      a.textContent = r.type + '.' + r.name;
       a.target = '_blank';
       a.rel = 'noopener';
       a.style.cssText = 'color: #007bff; text-decoration: none; font-weight: 500; cursor: pointer;';
@@ -2602,7 +4442,7 @@ function renderLists(resources, modules) {
     `;
     
     const title = document.createElement('h4');
-    title.textContent = `Modules (${modules.length})`;
+    title.textContent = 'Modules (' + modules.length + ')';
     title.style.cssText = 'margin: 0; font-size: 18px; color: #007bff;';
     
     const toggle = document.createElement('span');
@@ -2636,9 +4476,9 @@ function renderLists(resources, modules) {
       let href = 'https://github.com/';
       if (/^git::/.test(m.source)) href = m.source.replace(/^git::/, '');
       else if (/^https?:\/\//.test(m.source)) href = m.source;
-      else if (m.source) href = `https://github.com/${m.source}`;
+      else if (m.source) href = 'https://github.com/' + m.source;
       a.href = href;
-      a.textContent = `module.${m.name}`;
+      a.textContent = 'module.' + m.name;
       a.target = '_blank';
       a.rel = 'noopener';
       a.style.cssText = 'color: #007bff; text-decoration: none; font-weight: 500; cursor: pointer;';
@@ -2708,19 +4548,10 @@ function processTerraformFile() {
   // Store dependency data globally for use in impact analysis
   window.tfDependencyData = { dependencyMap, impactMap, elements };
   
-  // Debounce graph updates to prevent continuous reloading
-  clearTimeout(graphUpdateTimer);
-  graphUpdateTimer = setTimeout(() => {
-    requestAnimationFrame(() => {
-      initGraph(elements);
-      
-      // Try to load saved state after graph is initialized
-      const savedState = loadCanvasState();
-      if (savedState) {
-        applyCanvasState(savedState);
-      }
-    });
-  }, 200);
+  // Initialize the clean tree view
+  initCleanTreeView(resources, modules);
+  
+  // Clean tree view is now the only view
 }
 
 function debouncedRun() {
