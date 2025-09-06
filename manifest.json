@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Terraform Resource Explorer",
-  "version": "1.0.0",
-  "description": "Visualize Terraform configurations as interactive dependency graphs with real-time parsing and resource exploration.",
+  "version": "1.1.0",
+  "description": "Visualize Terraform configurations as interactive dependency trees with expandable hierarchy, resource details, and dependency highlighting.",
   "permissions": [],
   "host_permissions": [
     "https://github.com/*",

@@ -1,11 +1,11 @@
 {
   "name": "terraform-resource-explorer",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "A browser extension that visualizes Terraform configurations as interactive dependency graphs",
   "main": "script.js",
   "scripts": {
     "build": "echo 'Extension ready for distribution'",
-    "package": "zip -r terraform-resource-explorer-v1.0.zip . -x '*.git*' '*.DS_Store*' 'node_modules/*' 'package-lock.json'"
+    "package": "zip -r terraform-resource-explorer-v1.1.0.zip . -x '*.git*' '*.DS_Store*' 'node_modules/*' 'package-lock.json'"
   },
   "keywords": [
     "terraform",

@@ -5,10 +5,24 @@ A browser extension that visualizes Terraform configurations as interactive depe
 ## Features
 
 ### 🎯 **Core Functionality**
-- **Interactive Graph Visualization**: View Terraform resources and modules as connected nodes
-- **Real-time Parsing**: Automatically parses HCL files and updates the graph
-- **Resource Details**: Click nodes to view detailed resource information
+- **Interactive Dependency Tree**: View Terraform resources in a hierarchical, expandable tree structure
+- **Real-time Parsing**: Automatically parses HCL files and builds dependency relationships
+- **Resource Details**: Click resources to view complete attribute information
+- **Dependency Highlighting**: Click any resource to highlight its dependents in red
 - **Documentation Links**: Direct links to official Terraform provider documentation
+
+### 🌳 **Tree Navigation**
+- **Expandable Hierarchy**: Click ▶ to expand and see dependent resources
+- **Clean Top-Level View**: See foundation resources first, drill down as needed
+- **Visual Hierarchy**: Nested resources with clear indentation and borders
+- **Interactive Highlighting**: Click resource names to highlight dependencies
+
+### 📊 **Resource Information**
+- **Complete Attributes**: View all key-value pairs from resource configuration
+- **Dependencies**: See explicit `depends_on` relationships
+- **References**: View implicit references to other resources
+- **Copy Resource IDs**: Easy copying of resource identifiers
+- **Documentation Links**: Direct links to official Terraform docs
 
 ### 🎨 **Canvas Management**
 - **Auto-save**: Automatically saves changes when you modify the graph
@@ -21,12 +35,6 @@ A browser extension that visualizes Terraform configurations as interactive depe
 - **Draw Mode**: Create custom relationships between resources
 - **Clear Function**: Remove drawn relationships
 
-### 📊 **Resource Information**
-- **Detailed Panels**: View all resource attributes and values
-- **Categorized Attributes**: Organized by Common, Security, Network, and Other
-- **Copy Resource IDs**: Easy copying of resource identifiers
-- **Documentation Links**: Direct links to official Terraform docs
-
 ### 🔗 **Smart Documentation Links**
 - **Dynamic AWS Links**: Uses official AWS documentation CSV for accurate links
 - **Pattern-based Fallback**: Supports Azure, Google Cloud, Kubernetes, and other providers
@@ -36,8 +44,10 @@ A browser extension that visualizes Terraform configurations as interactive depe
 
 ### Basic Navigation
 1. **Open Extension**: Click the extension icon on any Terraform file
-2. **View Graph**: The dependency graph will automatically load
-3. **Interact**: Click nodes for details, drag to pan, scroll to zoom
+2. **View Tree**: The dependency tree will automatically load
+3. **Expand Resources**: Click ▶ to see dependent resources
+4. **Highlight Dependencies**: Click resource names to highlight dependents
+5. **View Details**: Click resource names to see complete attribute information
 
 ### Canvas State Management
 1. **Auto-save**: Changes are automatically saved when you modify the graph
@@ -50,9 +60,11 @@ A browser extension that visualizes Terraform configurations as interactive depe
 3. **Exit Draw Mode**: Click "Exit Draw" when finished
 
 ### Resource Details
-1. **Click Nodes**: View detailed resource information
-2. **Copy IDs**: Click the resource ID field to copy
-3. **View Documentation**: Click documentation links for official docs
+1. **Click Resource Names**: View detailed resource information with all attributes
+2. **View Dependencies**: See explicit `depends_on` and implicit references
+3. **Copy IDs**: Click the resource ID field to copy
+4. **View Documentation**: Click documentation links for official docs
+5. **Highlight Dependents**: Click any resource to see what depends on it
 
 ## Technical Details
 
