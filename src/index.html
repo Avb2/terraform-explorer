@@ -1,4 +1,4 @@
-<!-- index.html (fragment; no external scripts) -->
+<!-- index.html (fragment; includes modular scripts) -->
 <style>
   #tf-explorer-sidebar {
     position: fixed; top: 0; right: 0; width: 400px; height: 100%;
@@ -57,3 +57,12 @@
   <div id="tf-modules-section"></div>
   <div id="tf-issues-section"></div>
 </div>
+
+<!-- Load modular JavaScript files in dependency order -->
+<script src="js/globals.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/parser.js"></script>
+<script src="js/dependency.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/graph.js"></script>
+<script src="js/main.js"></script>
