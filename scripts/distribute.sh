@@ -3,18 +3,18 @@
 # Terraform Resource Explorer Distribution Script
 # This script creates a distribution package for the browser extension
 
-echo "🚀 Creating Terraform Resource Explorer Distribution Package..."
+echo "Creating Terraform Resource Explorer Distribution Package..."
 
 # Set version
 VERSION="1.0.0"
 PACKAGE_NAME="terraform-resource-explorer-v${VERSION}"
 
 # Create distribution directory
-echo "📁 Creating distribution directory..."
+echo "Creating distribution directory..."
 mkdir -p dist
 
 # Copy files to distribution directory
-echo "📋 Copying files..."
+echo "Copying files..."
 cp manifest.json dist/
 cp package.json dist/
 
@@ -34,28 +34,28 @@ cp assets/icons/icon96.png dist/icon96.png
 cp assets/icons/store-icon-128.png dist/store-icon-128.png
 
 # Create ZIP package
-echo "📦 Creating ZIP package..."
+echo "Creating ZIP package..."
 cd dist
 zip -r "../${PACKAGE_NAME}.zip" . -x "*.DS_Store*"
 cd ..
 
 # Create checksum
-echo "🔍 Creating checksum..."
+echo "Creating checksum..."
 shasum -a 256 "${PACKAGE_NAME}.zip" > "${PACKAGE_NAME}.zip.sha256"
 
 # Clean up
-echo "🧹 Cleaning up..."
+echo "Cleaning up..."
 rm -rf dist
 
-echo "✅ Distribution package created successfully!"
+echo "Distribution package created successfully!"
 echo ""
-echo "📦 Package: ${PACKAGE_NAME}.zip"
-echo "🔍 Checksum: ${PACKAGE_NAME}.zip.sha256"
+echo "Package: ${PACKAGE_NAME}.zip"
+echo "Checksum: ${PACKAGE_NAME}.zip.sha256"
 echo ""
-echo "📋 Next steps:"
+echo "Next steps:"
 echo "1. Test the extension by loading it in Chrome"
 echo "2. Upload to Chrome Web Store (optional)"
 echo "3. Create a GitHub release with the ZIP file"
 echo "4. Share with your team!"
 echo ""
-echo "🎉 Your Terraform Resource Explorer is ready to ship!"
+echo "Your Terraform Resource Explorer is ready to ship!"

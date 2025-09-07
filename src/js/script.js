@@ -3187,8 +3187,9 @@ function showResourceDetails(resource) {
   `;
 
   // Resource attributes
+  let attrsSection = null;
   if (resource.attributes && resource.attributes.length > 0) {
-    const attrsSection = document.createElement('div');
+    attrsSection = document.createElement('div');
     attrsSection.style.cssText = `
       margin-bottom: 20px;
     `;
@@ -3203,12 +3204,12 @@ function showResourceDetails(resource) {
         `).join('')}
       </div>
     `;
-    content.appendChild(attrsSection);
   }
 
   // Dependencies
+  let depsSection = null;
   if (resource.depends_on && resource.depends_on.length > 0) {
-    const depsSection = document.createElement('div');
+    depsSection = document.createElement('div');
     depsSection.style.cssText = `
       margin-bottom: 20px;
     `;
@@ -3220,12 +3221,12 @@ function showResourceDetails(resource) {
         `).join('')}
       </div>
     `;
-    content.appendChild(depsSection);
   }
 
   // References
+  let refsSection = null;
   if (resource.references && resource.references.length > 0) {
-    const refsSection = document.createElement('div');
+    refsSection = document.createElement('div');
     refsSection.style.cssText = `
       margin-bottom: 20px;
     `;
@@ -3237,13 +3238,13 @@ function showResourceDetails(resource) {
         `).join('')}
       </div>
     `;
-    content.appendChild(refsSection);
   }
 
   // Impact Chain
   const impactChain = calculateImpactChain(resource);
+  let impactSection = null;
   if (impactChain.length > 0) {
-    const impactSection = document.createElement('div');
+    impactSection = document.createElement('div');
     impactSection.style.cssText = `
       margin-bottom: 20px;
     `;
@@ -3257,7 +3258,6 @@ function showResourceDetails(resource) {
         `).join('')}
       </div>
     `;
-    content.appendChild(impactSection);
   }
 
   // Actions
@@ -3321,8 +3321,31 @@ function showResourceDetails(resource) {
   actionsSection.appendChild(copyBtn);
   actionsSection.appendChild(docsBtn);
 
-  content.appendChild(typeSection);
+  // Append sections in the desired order: Name, Type, Attributes, Everything else
   content.appendChild(nameSection);
+  content.appendChild(typeSection);
+  
+  // Append attributes if they exist
+  if (attrsSection) {
+    content.appendChild(attrsSection);
+  }
+  
+  // Append dependencies if they exist
+  if (depsSection) {
+    content.appendChild(depsSection);
+  }
+  
+  // Append references if they exist
+  if (refsSection) {
+    content.appendChild(refsSection);
+  }
+  
+  // Append impact chain if it exists
+  if (impactSection) {
+    content.appendChild(impactSection);
+  }
+  
+  // Append actions last
   content.appendChild(actionsSection);
 
   popup.appendChild(header);

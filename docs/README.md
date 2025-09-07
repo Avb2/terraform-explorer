@@ -4,38 +4,38 @@ A browser extension that visualizes Terraform configurations as interactive depe
 
 ## Features
 
-### 🎯 **Core Functionality**
+### **Core Functionality**
 - **Interactive Dependency Tree**: View Terraform resources in a hierarchical, expandable tree structure
 - **Real-time Parsing**: Automatically parses HCL files and builds dependency relationships
 - **Resource Details**: Click resources to view complete attribute information
 - **Dependency Highlighting**: Click any resource to highlight its dependents in red
 - **Documentation Links**: Direct links to official Terraform provider documentation
 
-### 🌳 **Tree Navigation**
-- **Expandable Hierarchy**: Click ▶ to expand and see dependent resources
+### **Tree Navigation**
+- **Expandable Hierarchy**: Click the arrow to expand and see dependent resources
 - **Clean Top-Level View**: See foundation resources first, drill down as needed
 - **Visual Hierarchy**: Nested resources with clear indentation and borders
 - **Interactive Highlighting**: Click resource names to highlight dependencies
 
-### 📊 **Resource Information**
+### **Resource Information**
 - **Complete Attributes**: View all key-value pairs from resource configuration
 - **Dependencies**: See explicit `depends_on` relationships
 - **References**: View implicit references to other resources
 - **Copy Resource IDs**: Easy copying of resource identifiers
 - **Documentation Links**: Direct links to official Terraform docs
 
-### 🎨 **Canvas Management**
+### **Canvas Management**
 - **Auto-save**: Automatically saves changes when you modify the graph
 - **State Restoration**: Automatically restores your previous layout when returning to a URL
 - **Visual Feedback**: Status indicators show when auto-save occurs
 
-### 🔧 **Graph Controls**
+### **Graph Controls**
 - **Zoom Controls**: Zoom in/out and reset view
 - **Pan Mode**: Navigate around the graph
 - **Draw Mode**: Create custom relationships between resources
 - **Clear Function**: Remove drawn relationships
 
-### 🔗 **Smart Documentation Links**
+### **Smart Documentation Links**
 - **Dynamic AWS Links**: Uses official AWS documentation CSV for accurate links
 - **Pattern-based Fallback**: Supports Azure, Google Cloud, Kubernetes, and other providers
 - **Automatic Updates**: No need to maintain hardcoded URL lists
